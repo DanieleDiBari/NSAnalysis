@@ -97,7 +97,7 @@ class Data:
 
     def read_data(self, filename, title='undefined', type_of_file='hdf', read_log_only=False, energy_rescale=1):
         self.title = title
-        
+
         if not type_of_file in ['ascii', 'hdf']:
             raise Exception('ERROR! Type of file \'{}\' unknown.'.format(type_of_file))
         
@@ -202,14 +202,22 @@ class Data:
                 self.S  = np.array(ifile['mantid_workspace_1/workspace/values'])
                 self.dS = np.array(ifile['mantid_workspace_1/workspace/errors'])
                 # Temperature
-                self.sample_temp = ifile['mantid_workspace_1/logs/sample.temperature/value'][:].mean()
+                self.sample_temp = np.array([
+                    ifile['mantid_workspace_1/logs/sample.temperature/value'][:].mean(), 
+                    ifile['mantid_workspace_1/logs/sample.temperature/value'][:].std()
+                    ])
+                # Pressure
+                self.sample_pres = np.array([
+                    ifile['mantid_workspace_1/logs/sample.pressure/value'][:].mean(), 
+                    ifile['mantid_workspace_1/logs/sample.pressure/value'][:].std()
+                    ])
                 # Numors
-                self.instrument = ifile['mantid_workspace_1/logs/instrument.name/value'][0]
+                self.instrument = ifile['mantid_workspace_1/logs/instrument.name/value'][0].decode('utf-8')
                 # Wavelength
-                self.wavelength = ifile['mantid_workspace_1/logs//wavelength/value'][0]
+                self.wavelength = ifile['mantid_workspace_1/logs/wavelength/value'][0]
                 # Titles
-                self.global_title = ifile['mantid_workspace_1/logs/title/value'][0]
-                self.subtitle     = ifile['mantid_workspace_1/logs/subtitle/value'][0]
+                self.global_title = ifile['mantid_workspace_1/logs/title/value'][0].decode('utf-8')
+                self.subtitle     = ifile['mantid_workspace_1/logs/subtitle/value'][0].decode('utf-8')
                 # Filename 
                 self.fname = filename
         
@@ -343,7 +351,7 @@ class Data:
                 logdata += 'x_title == {}\n'.format(self.q_title)
                 logdata += 'y_title == {}\n'.format(self.E_title)
                 logdata += 'z_title == {}\n'.format(self.S_title)
-                logdata += 'sample_temp == {}\n'.format(self.sample_temp)  
+                logdata += 'sample_temp == {} +- {}\n'.format(self.sample_temp)  
                 logdata += 'wavelength   == {}\n'.format(self.wavelength)
                 logdata += 'instrument   == {}\n'.format(self.instrument)
             else:
@@ -362,8 +370,9 @@ class Data:
                 logdata += 'S(q,E).size  == {}x{}\n'.format(self.S.shape[0], self.S.shape[1])
                 logdata += 'global_title == {}\n'.format(self.global_title)
                 logdata += 'file_title   == {}\n'.format(self.subtitle)
-                logdata += 'sample_temp  == {}\n'.format(self.sample_temp)
-                logdata += 'wavelength   == {}\n'.format(self.wavelength)
+                logdata += 'sample_temp  == ({} +- {}) K\n'.format(self.sample_temp[0], self.sample_temp[1]) 
+                logdata += 'sample_pres  == ({} +- {}) Kbar\n'.format(self.sample_pres[0], self.sample_pres[1]) 
+                logdata += 'wavelength   == {} Å\n'.format(self.wavelength)
                 logdata += 'instrument   == {}\n'.format(self.instrument)
             else:
                 raise Exception('ERROR! No file read.')   
@@ -595,7 +604,10 @@ class Data:
             sigma_vana  = self.energy_rescale * self.vana_data['gaussian_sigma']
 
         if data_title == '':
-            data_title = self.title + ' {} K - QFIT Results'.format(self.sample_temp)
+            if self.ftype == 'ascii':
+                data_title = self.title + ' {} K - QFIT Results'.format(self.sample_temp)
+            else:
+                data_title = self.title + ' ( {} +- {} ) K - QFIT Results'.format(*self.sample_temp)
         if data_subtitle == '':
             data_subtitle = 'Function: ' + fit_function.__name__
         result_DATA = data_title + '\n' + data_subtitle + '\n'
@@ -606,10 +618,13 @@ class Data:
             result_DATA += '{:>27}  {:>26}  '.format(sigma_vana_pname, sigma_vana_pname+'_stderr')
         result_DATA += '\n'
         if data_filename == '':
-            data_filename = self.title + '_{}K.QFitDATA.txt'.format(int(np.round(self.sample_temp)))
+            data_filename = self.title + '_{}K.QFitDATA.txt'.format(int(np.round(self.sample_temp if self.ftype == 'ascii' else self.sample_temp[0])))
 
         if log_title == '':
-            log_title = self.title + ' {} K - QFIT Results log'.format(self.sample_temp)
+            if self.ftype == 'ascii':
+                data_title = self.title + ' {} K - QFIT Results log'.format(self.sample_temp)
+            else:
+                data_title = self.title + ' ( {} +- {} ) K - QFIT Results log'.format(*self.sample_temp)
         log =  '\n|' + '-' * 78 + '|\n|' + '-' * 12 + '|' + ' ' * 8
         log += log_title
         log += ' ' * 8 + '|' + '-' * 12 + '|\n|' + '-' * 78 + '|\n'
@@ -617,7 +632,7 @@ class Data:
         log += self.logdata + '\n|' + '-' * 78 + '|\n'
         self.qfit_result_LOG = log
         if log_filename == '':
-            log_filename = self.title + '_{}K.QFitLOG.txt'.format(int(np.round(self.sample_temp)))
+            log_filename = self.title + '_{}K.QFitLOG.txt'.format(int(np.round(self.sample_temp if self.ftype == 'ascii' else self.sample_temp[0])))
         
         if starting_qid != 0:
             qid_stdrange = np.arange(0, self.q.shape[0], 1, dtype='i')
@@ -744,7 +759,10 @@ class Data:
                 n_row += 1
         
         if fig_title == '':
-            fig_title = self.title + ' {:6.2f}K - QFit'.format(self.sample_temp)
+            if self.ftype == 'ascii':
+                fig_title = self.title + ' {:6.2f}K - QFit'.format(self.sample_temp)
+            else:
+                fig_title = self.title + ' ($\\bf{{{:6.2f}\pm{:4.2f}}}$)K - QFit'.format(*self.sample_temp)
         fig = plt.figure(figsize=(n_col * dim_col, n_row * dim_row), dpi=dpi)
         fig.suptitle(fig_title, y=fig_title_y, size=fig_title_fs, fontweight=fig_title_fw)
 
@@ -984,7 +1002,10 @@ class Data:
         sigma_vana  = self.energy_rescale * self.vana_data['gaussian_sigma']
 
         if data_title == '':
-            data_title = self.title + ' {} K - SFIT Results'.format(self.sample_temp)
+            if self.ftype == 'ascii':
+                data_title = self.title + ' {} K - SFIT Results'.format(self.sample_temp)
+            else:
+                data_title = self.title + ' ( {} +- {} ) K - SFIT Results'.format(*self.sample_temp)
         if data_subtitle == '':
             data_subtitle = 'Function: ' + fit_dataset_function.__name__
         result_DATA = data_title + '\n' + data_subtitle + '\nNOT SHARED Parameters:\n'
@@ -994,10 +1015,13 @@ class Data:
         result_DATA += '{:>27}  {:>26}  '.format(sigma_vana_pname, sigma_vana_pname+'_stderr')
         result_DATA += '\n'
         if data_filename == '':
-            data_filename = self.title + '_{}K.SFitDATA.txt'.format(int(np.round(self.sample_temp)))
+            data_filename = self.title + '_{}K.SFitDATA.txt'.format(int(np.round(self.sample_temp if self.ftype == 'ascii' else self.sample_temp[0])))
 
         if log_title == '':
-            log_title = self.title + ' {} K - SFIT Results log'.format(self.sample_temp)
+            if self.ftype == 'ascii':
+                data_title = self.title + ' {} K - SFIT Results log'.format(self.sample_temp)
+            else:
+                data_title = self.title + ' ( {} +- {} ) K - SFIT Results log'.format(*self.sample_temp)
         log =  '\n|' + '-' * 78 + '|\n|' + '-' * 12 + '|' + ' ' * 8
         log += log_title
         log += ' ' * 8 + '|' + '-' * 12 + '|\n|' + '-' * 78 + '|\n'
@@ -1005,7 +1029,7 @@ class Data:
         log += self.logdata + '\n|' + '-' * 78 + '|\n'
         self.sfit_result_LOG = log
         if log_filename == '':
-            log_filename = self.title + '_{}K.SFitLOG.txt'.format(int(np.round(self.sample_temp)))
+            log_filename = self.title + '_{}K.SFitLOG.txt'.format(int(np.round(self.sample_temp if self.ftype == 'ascii' else self.sample_temp[0])))
         
         self.sfit_params = lmfit.Parameters()
         # Shared (among q values)
@@ -1138,7 +1162,10 @@ class Data:
                 n_row += 1
 
         if fig_title == '':
-            fig_title = self.title + ' {:6.2f}K - QFit'.format(self.sample_temp)
+            if self.ftype == 'ascii':
+                fig_title = self.title + ' {:6.2f}K - QFit'.format(self.sample_temp)
+            else:
+                fig_title = self.title + ' ($\\bf{{{:6.2f}\pm{:4.2f}}}$)K - QFit'.format(*self.sample_temp)
         fig = plt.figure(figsize=(n_col * dim_col, n_row * dim_row), dpi=dpi)
         fig.suptitle(fig_title, y=fig_title_y, size=fig_title_fs, fontweight=fig_title_fw)
 
@@ -1241,7 +1268,10 @@ class Data:
         self.sfit_axs = axs
 
     def db_factor(self, x):
-        return np.e**(- x / (2 * kB_microeV_K * self.sample_temp))
+        if self.ftype == 'ascii':
+            return np.e**(- x / (2 * kB_microeV_K * self.sample_temp))
+        else:
+            return np.e**(- x / (2 * kB_microeV_K * self.sample_temp[0]))
 
 def read_FitDATA(fname):
     with open(fname, 'r') as fin:
@@ -1297,14 +1327,26 @@ def rebin(x, bin_avg=2, verbose=True, error_prop=False):
             new_x = np.sqrt((x[off_set:].reshape(npoint_new, bin_avg)**2).sum(1))/bin_avg
         return new_x
 
-def get_q(theta, hw, w):
+def get_q(theta, hw, g0):
+    '''
+    
+    FROM:
+        theta = angle between the incident and the scattered neutron [degree]
+        hw    = energy change experienced by the sample [meV] 
+        g0    = wave lenght of the incident neutron 
+    
+    COMPUTE:
+        q     = difference between the incident and scattered wave vector of the neutron [Å]
+    
+    '''
+
     h = scipy.constants.physical_constants['Planck constant'] 
     e = scipy.constants.physical_constants['elementary charge']
     m = scipy.constants.physical_constants['neutron mass']
     
     w_meter = w * 1e-10
     theta_rad = theta * np.pi / 180
-    k0 = 2 * np.pi / w
+    k0 = 2 * np.pi / g0
     e0 = 0.5 * h[0]**2 / (m[0] * w_meter**2)
     e0_meV = 1e3 * e0 / e[0]            
     r = hw / e0_meV
