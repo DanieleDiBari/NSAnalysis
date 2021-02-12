@@ -731,7 +731,7 @@ class Data:
         legend_anchor = (0.009, 0.985), legend_loc='upper left',
         qbox_pos=dict(x=0.975, y=1.03), qbox_align=dict(h='right', v='center'),
         fit_neval = 1000,
-        normalize = True,
+        normalize = True, ylim_upper='common', ylim_lower='common',
         elim=[], e_window=[], rebin_avg=1, 
         xlabel = 'Energy [$\mu eV$]',
         ylabel = 'Intensity [arb. unit]',
@@ -755,8 +755,11 @@ class Data:
                 sub_gs = main_gs[i,j].subgridspec(2, 1, height_ratios=[4,1], hspace=0.05)
                 axs.append([fig.add_subplot(sub_gs[0]), fig.add_subplot(sub_gs[1])])
     
-        self.qfit_elastic_summedintensity = np.zeros((2,self.q.shape[0]))
-        self.qfit_summedintensity = np.zeros((2,self.q.shape[0]))
+        self.qfit_elastic_summedintensity = np.zeros((2, self.q.shape[0]))
+        self.qfit_summedintensity = np.zeros((2, self.q.shape[0]))
+        self.qfit_ylims = dict(min=np.full((2, self.q.shape[0]), np.inf), max=np.full((2, self.q.shape[0]), -np.inf))
+        qfit_residues_ylims = dict(min=np.full((2, self.q.shape[0]), np.inf), max=np.full((2, self.q.shape[0]), -np.inf))
+        
         if elim == []:
             set_elim = True
         else:
@@ -778,6 +781,19 @@ class Data:
 
             m  = self.qfit_result[i_q].eval(x=x_fit) * db_factor_fit
             dm = self.qfit_result[i_q].eval_uncertainty(x=x_fit) * db_factor_fit
+            
+            self.qfit_ylims['max'][0, i_q] = m.max()
+            ids_max = (m == m.max())
+            if np.count_nonzero(ids_max) == 1:
+                self.qfit_ylims['max'][1, i_q] = dm[ids_max]
+            else:
+                self.qfit_ylims['max'][1, i_q] = dm[ids_max].mean()
+            self.qfit_ylims['min'][0, i_q] = m.min()
+            ids_min = (m == m.min())
+            if np.count_nonzero(ids_min) == 1:
+                self.qfit_ylims['min'][1, i_q] = dm[ids_min]
+            else:
+                self.qfit_ylims['min'][1, i_q] = dm[ids_min].mean()
 
             elastic_erange = (x_fit >= -self.qfit_end_params['en_resolution'][0, i_q]) & (x_fit <= self.qfit_end_params['en_resolution'][0, i_q])
             self.qfit_elastic_summedintensity[0, i_q] = m[elastic_erange].mean()
@@ -786,12 +802,11 @@ class Data:
             self.qfit_summedintensity[1, i_q] = np.sqrt((dm**2).sum())
 
             if normalize:
-                norm = 1 / m.max() 
+                norm = 1 / self.qfit_peak_height[0, i_q]
                 m = norm * m
                 dm = norm * dm
             else:
                 norm = 1
-
             if self.vana_read:
                 gauss = lmfit.models.GaussianModel().func
                 en_res = gauss(x_fit, amplitude=1, center=self.qfit_end_params[center_pname][0][i_q], sigma=self.qfit_end_params[sigma_vana_pname][0][i_q])
@@ -840,17 +855,77 @@ class Data:
             bx.plot(elim, (0,0), color='k', lw=1, ls='-.')
             m_f = self.qfit_result[i_q].best_fit * db_factor_fitdata
             dm_f = self.qfit_result[i_q].eval_uncertainty(x=x_fitdata) * db_factor_fitdata
-            diff = m_f - y_fitdata[0]
-            diff_err = np.sqrt(dm_f**2 + y_fitdata[1]**2)
-            f_b = bx.plot(x,   1000*diff, color='b')
-            bx.fill_between(x, 1000*(diff+diff_err), 1000*(diff-diff_err), color='magenta', alpha=0.45)
+            residues = np.array([
+                m_f - y_fitdata[0],
+                np.sqrt(dm_f**2 + y_fitdata[1]**2)
+                ])
+            f_b = bx.plot(x,   1000*residues[0], color='b')
+            bx.fill_between(x, 1000*(residues[0]+residues[1]), 1000*(residues[0]-residues[1]), color='magenta', alpha=0.45)
             df_b = bx.fill(np.NaN, np.NaN, color='magenta', alpha=0.45)
 
             ax.set(ylabel=ylabel, xlim=elim)
             bx.set(xlabel=xlabel, xlim=elim)
 
             ax.legend(bbox_to_anchor=legend_anchor, loc=legend_loc)
+
+            if type(ylim_lower) == type(''):
+                qfit_residues_ylims['max'][0, i_q] = residues[0].max()
+                ids_max = (residues[0] == residues[0].max())
+                if np.count_nonzero(ids_max) == 1:
+                    qfit_residues_ylims['max'][1, i_q] = residues[1][ids_max]
+                else:
+                    qfit_residues_ylims['max'][1, i_q] = residues[1][ids_max].mean()
+                qfit_residues_ylims['min'][0, i_q] = residues[0].min()
+                ids_min = (residues[0] == residues[0].min())
+                if np.count_nonzero(ids_min) == 1:
+                    qfit_residues_ylims['min'][1, i_q] = residues[1][ids_min]
+                else:
+                    qfit_residues_ylims['min'][1, i_q] = residues[1][ids_min].mean()
+
+        for i_q, qi in enumerate(self.q):
+            ax = axs[i_q][0]
+            bx = axs[i_q][1]
+
+            if not normalize:
+                if type(ylim_upper) == type(''):
+                    if ylim_upper == 'common':
+                        dy = 0.075 * np.max(self.qfit_ylims['max'][0] + self.qfit_ylims['max'][1])
+                        ax.set(ylim=(self.qfit_ylims['min'][0].min() - dy, self.qfit_ylims['max'][0].max() + dy))
+                    elif ylim_upper == 'q-dependent':
+                        dy = 0.075 * (self.qfit_ylims['max'][0] + self.qfit_ylims['max'][1])
+                        ax.set(ylim=(self.qfit_ylims['min'][0, i_q] - dy, self.qfit_ylims['max'][0, i_q] + dy))
+                    else:
+                        raise Exception('ERROR! Unknown value for limits of the uppers graphs: \"{}\".\nAllowed settings are:\nAUTOMATIC SETTING\n - \"common\": set the same ylims for all the upper graphs\n - \"q-dependent\": set the different ylims for each upper graphs\nMANUAL SETTING\n - (<ymin>, <ymax>): set the ylims as <ymin> and <ymax> for all the upper graphs'.format(ylim_upper))
+                elif type(ylim_upper) == type((1,1)):
+                    ax.set(ylim=ylim_upper)
+                else:
+                    raise Exception('ERROR! Unknown value for limits of the uppers graphs: \"{}\".\nAllowed settings are:\nAUTOMATIC SETTING\n - \"common\": set the same ylims for all the upper graphs\n - \"q-dependent\": set the different ylims for each upper graphs\nMANUAL SETTING\n - (<ymin>, <ymax>): set the ylims as <ymin> and <ymax> for all the upper graphs'.format(ylim_upper))
         
+            if type(ylim_lower) == type(''):
+                if ylim_lower == 'common':
+                    ymax = 1000 * np.max(qfit_residues_ylims['max'][0] + qfit_residues_ylims['max'][1])
+                    ymin = 1000 * np.min(qfit_residues_ylims['min'][0] - qfit_residues_ylims['min'][1])
+                    if ymax < -ymin:
+                        dy = - 1.075 * ymin
+                    else:
+                        dy = 1.075 * ymax
+                    bx.set(ylim=(-dy, dy))
+                elif ylim_lower == 'q-dependent':
+                    ymax = 1000 * (qfit_residues_ylims['max'][0, i_q] + qfit_residues_ylims['max'][1, i_q])
+                    ymin = 1000 * (qfit_residues_ylims['min'][0, i_q] - qfit_residues_ylims['min'][1, i_q])
+                    if ymax < -ymin:
+                        dy = - 1.075 * ymin
+                    else:
+                        dy =   1.075 * ymax
+                    bx.set(ylim=(-dy, dy))
+                else:
+                    raise Exception('ERROR! Unknown value for limits of the lower graphs: \"{}\".\nAllowed settings are:\nAUTOMATIC SETTING\n - \"common\": set the same ylims for all the lower graphs\n - \"q-dependent\": set the different ylims for each lower graphs\nMANUAL SETTING\n - (<ymin>, <ymax>): set the ylims as <ymin> and <ymax> for all the lower graphs'.format(ylim_lower))
+            elif type(ylim_lower) == type((1,1)):
+                bx.set(ylim=ylim_lower)
+            else:
+                raise Exception('ERROR! Unknown value for limits of the lower graphs: \"{}\".\nAllowed settings are:\nAUTOMATIC SETTING\n - \"common\": set the same ylims for all the lower graphs\n - \"q-dependent\": set the different ylims for each lower graphs\nMANUAL SETTING\n - (<ymin>, <ymax>): set the ylims as <ymin> and <ymax> for all the lower graphs'.format(ylim_lower))
+        
+
         self.qfit_fig = fig
         self.qfit_axs = axs
 
