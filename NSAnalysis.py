@@ -65,8 +65,9 @@ class Data:
             'No Error',
             'NaN Signal',
             'NaN Error',
-            'Infinit Signal',
-            'Negative Signal',
+            'Neg. Signal',
+            'Neg. Error',
+            'Inf. Signal',
         )
         # Additional DATA
         self.sample_temp = -1.0
@@ -230,7 +231,23 @@ class Data:
         if verbose:
             print('Read Vana DATA from: \'{}\'\n'.format(vana_filename))
 
-    def correct_data(self, signal_to_noise_ratio=0, rm_no_signal=True, rm_negative_values=True, verbose=True, row_length=20):
+    def correct_data(self, 
+        signal_to_noise_ratio=0, 
+        rm_no_signal=True, 
+        rm_no_errors=True, 
+        rm_negative_signal=True, 
+        rm_negative_errors=True, 
+        rm_infinite_signal=True, 
+        delete_values=True,
+        verbose=True, 
+        row_length=20
+        ):
+        
+        def delete_points(ids, del_val=True):
+            if del_val:
+                self.S[i][ids]  = 0
+            self.dS[i][ids] = np.inf
+
         nq = self.q.shape[0]
         rm_datapoint = dict()
         for tdc in self.data_correction['types']:    
@@ -239,45 +256,47 @@ class Data:
             # Reasonable signal-to-noise range
             if signal_to_noise_ratio > 0:
                 ids_snr = self.S[i] < signal_to_noise_ratio * self.S[i].max()
-                self.S[i][ids_snr] = 0 
-                self.dS[i][ids_snr] = np.inf
+                delete_points(ids_snr)
                 rm_datapoint['Signal/Noise'][i] = self.S[i][ids_snr].shape[0]
             elif signal_to_noise_ratio == -1:
                 signal_to_noise_ratio = 5e-4
                 ids_snr = self.S[i] < signal_to_noise_ratio * self.S[i].max()
-                self.S[i][ids_snr] = 0 
-                self.dS[i][ids_snr] = np.inf
+                delete_points(ids_snr)
                 rm_datapoint['Signal/Noise'][i] = self.S[i][ids_snr].shape[0]
             # No signal
             elif rm_no_signal:
                 ids_nosig = self.S[i] == 0
-                self.dS[i][ids_nosig] = np.inf
+                delete_points(ids_nosig)
                 rm_datapoint['No Signal'][i] = self.dS[i][ids_nosig].shape[0]
+            # No errors
+            if rm_no_errors:
+                ids_noerr = self.dS[i] == 0
+                delete_points(ids_noerr, del_val=delete_values)
+                rm_datapoint['No Error'][i] = self.dS[i][ids_noerr].shape[0]
             # Negative signal
-            if rm_negative_values:
+            if rm_negative_signal:
                 ids_neg = self.S[i] < 0
-                self.S[i][ids_neg] = 0 
-                self.dS[i][ids_neg] = np.inf
-                rm_datapoint['Negative Signal'][i] = self.S[i][ids_neg].shape[0]
+                delete_points(ids_neg)
+                rm_datapoint['Neg. Signal'][i] = self.S[i][ids_neg].shape[0]
+            # Negative errors
+            if rm_negative_errors:
+                ids_negerr = self.dS[i] < 0
+                delete_points(ids_negerr, del_val=delete_values)
+                rm_datapoint['Neg. Error'][i] = self.dS[i][ids_negerr].shape[0]
+            # Infinite values
+            if rm_infinite_signal:
+                ids_inf = np.isinf(self.S[i])
+                delete_points(ids_inf)
+                rm_datapoint['Inf. Signal'][i] = self.S[i][ids_inf].shape[0]
             # Nan values
             ids_nan = np.isnan(self.S[i])
-            self.S[i][ids_nan]     = 0
-            self.dS[i][ids_nan] = np.inf
+            delete_points(ids_nan)
             rm_datapoint['NaN Signal'][i] = self.S[i][ids_nan].shape[0]
             # Nan errors
             ids_enan = np.isnan(self.dS[i])
-            self.dS[i][ids_enan] = np.inf
+            delete_points(ids_enan, del_val=delete_values)
             rm_datapoint['NaN Error'][i] = self.dS[i][ids_enan].shape[0]
-            # Infinite values
-            ids_inf = np.isinf(self.S[i])
-            self.S[i][ids_inf]     = 0
-            self.dS[i][ids_inf] = np.inf
-            rm_datapoint['Infinit Signal'][i] = self.S[i][ids_inf].shape[0]
-            # No error
-            ids_noerr = self.dS[i] == 0
-            self.dS[i][ids_noerr] = np.inf
-            rm_datapoint['No Error'][i] = self.dS[i][ids_noerr].shape[0]
-        
+
         ntables = (nq-1) // row_length + 1
         rm_counter = np.zeros(nq, dtype='i')
         out = ''
