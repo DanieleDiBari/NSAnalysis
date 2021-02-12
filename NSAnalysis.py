@@ -529,10 +529,26 @@ class Data:
 
         return x_val, np.array([y_val, y_err])
 
-    def qfit(self, fit_function, par_hints, elim=[], e_window=[], rebin_avg=1, par_hints_qvec=dict(), detailed_balance_factor=True, fit_method='leastsq', sigma_vana_pname='sigma_vana', center_pname='center', use_vana_for_center=True, contiguos_par_hints=False, starting_qid=0, log_title='', log_filename='', data_title='', data_subtitle='', data_filename='', odir='', verbose=False):
+    def qfit(
+        self, fit_function, par_hints, 
+        elim=[], e_window=[], rebin_avg=1, 
+        par_hints_qvec=dict(), 
+        detailed_balance_factor=True, 
+        fit_method='leastsq', 
+        sigma_vana_pname='sigma_vana', 
+        center_pname='center', 
+        use_vana_for_center=True, 
+        contiguos_par_hints=False, 
+        starting_qid=0, 
+        log_title='', log_filename='', 
+        data_title='', data_subtitle='', data_filename='', 
+        odir='', 
+        verbose=False
+        ):
+
         print('START QFit')
-        if not self.vana_read:
-            raise Exception('ERROR! No Vana Parameters readed.')
+        if not self.vana_read and use_vana_for_center:
+            raise Exception('ERROR! \"use_vana_for_center\" set True, but no Vana Parameters readed.')
 
         self.qfit_method  = fit_method 
         self.qfit_model  = [None for i_q in range(self.q.shape[0])]
@@ -542,20 +558,22 @@ class Data:
         for par in par_hints:
             self.qfit_end_params[par]   = np.full((2, self.q.shape[0]), np.inf)
         self.qfit_end_params['red_chi_squared'] = np.full((2, self.q.shape[0]), np.inf)
-        self.qfit_end_params[sigma_vana_pname]  = np.full((2, self.q.shape[0]), np.inf)
         self.qfit_end_params['en_resolution']   = np.full((2, self.q.shape[0]), np.inf)
 
-        q_vana = self.vana_data['q']
-        q_vana_id = []
-        for qi in self.q:
-            for j_q, qj in enumerate(q_vana):
-                if '{:4.2f}'.format(qi) == '{:4.2f}'.format(qj):
-                #if np.round(qi,5) == np.round(q,5):
-                    q_vana_id.append(j_q)
-                    break
-        q_vana_id = np.array(q_vana_id)
-        center_vana = self.energy_rescale * self.vana_data['gaussian_center']
-        sigma_vana  = self.energy_rescale * self.vana_data['gaussian_sigma']
+        if self.vana_read:
+            self.qfit_end_params[sigma_vana_pname]  = np.full((2, self.q.shape[0]), np.inf)
+
+            q_vana = self.vana_data['q']
+            q_vana_id = []
+            for qi in self.q:
+                for j_q, qj in enumerate(q_vana):
+                    if '{:4.2f}'.format(qi) == '{:4.2f}'.format(qj):
+                    #if np.round(qi,5) == np.round(q,5):
+                        q_vana_id.append(j_q)
+                        break
+            q_vana_id = np.array(q_vana_id)
+            center_vana = self.energy_rescale * self.vana_data['gaussian_center']
+            sigma_vana  = self.energy_rescale * self.vana_data['gaussian_sigma']
 
         if data_title == '':
             data_title = self.title + ' {} K - QFIT Results'.format(self.sample_temp)
@@ -565,7 +583,8 @@ class Data:
         result_DATA += '{:>15}  {:>10}  '.format('q', 'red_chi^2')
         for par in par_hints:
             result_DATA += '{:>27}  {:>26}  '.format(par, par+'_stderr')
-        result_DATA += '{:>27}  {:>26}  '.format(sigma_vana_pname, sigma_vana_pname+'_stderr')
+        if self.vana_read:
+            result_DATA += '{:>27}  {:>26}  '.format(sigma_vana_pname, sigma_vana_pname+'_stderr')
         result_DATA += '\n'
         if data_filename == '':
             data_filename = self.title + '_{}K.QFitDATA.txt'.format(int(np.round(self.sample_temp)))
@@ -612,7 +631,8 @@ class Data:
                         hints['value'] = self.qfit_end_params[par][0, i_q+1]
                 self.qfit_model[i_q].set_param_hint(par, **hints)
 
-            self.qfit_model[i_q].set_param_hint(sigma_vana_pname, value=sigma_vana[0,q_vana_id[i_q]], vary=False)
+            if self.vana_read:
+                self.qfit_model[i_q].set_param_hint(sigma_vana_pname, value=sigma_vana[0,q_vana_id[i_q]], vary=False)
             self.qfit_params[i_q] = self.qfit_model[i_q].make_params()
 
             self.qfit_result[i_q] = self.qfit_model[i_q].fit(
@@ -628,9 +648,9 @@ class Data:
                 if type(self.qfit_result[i_q].params[par].stderr) == type(self.qfit_result[i_q].params[par].value):
                     self.qfit_end_params[par][1,i_q] = self.qfit_result[i_q].params[par].stderr
                 else:
-                    if par == center_pname:
+                    if par == center_pname and use_vana_for_center:
                         self.qfit_end_params[par][1,i_q] = center_vana[1, q_vana_id[i_q]]
-                    elif par == sigma_vana_pname:
+                    elif par == sigma_vana_pname and use_vana_for_center:
                         self.qfit_end_params[par][1,i_q] = sigma_vana[1, q_vana_id[i_q]]
                     elif par_hints[par]['vary']:
                         self.qfit_end_params[par][1,i_q] = np.inf
@@ -639,7 +659,8 @@ class Data:
                         self.qfit_end_params[par][1,i_q] = 0
             #red_chisqrt = self.qfit_result[i_q].chisqr / (self.qfit_result[i_q].ndata - self.data_correction['rm_points'][i_q] - self.qfit_result[i_q].nvarys)
             self.qfit_end_params['red_chi_squared'][0,i_q] = self.qfit_result[i_q].redchi
-            self.qfit_end_params['en_resolution'][:,i_q]   = self.qfit_end_params[sigma_vana_pname][:,i_q] * (8*np.log(2))**0.5
+            if self.vana_read:
+                self.qfit_end_params['en_resolution'][:,i_q]   = self.qfit_end_params[sigma_vana_pname][:,i_q] * (8*np.log(2))**0.5
 
             result_DATA += '{:15.13f}  {:10.4e}  '.format(qi, self.qfit_result[i_q].redchi)
             for par in par_hints:
@@ -653,16 +674,17 @@ class Data:
                         self.qfit_end_params[par][0,i_q], 
                         self.qfit_end_params[par][1,i_q]
                     )
-            if self.qfit_end_params[sigma_vana_pname][1,i_q] != np.inf:
-                result_DATA += '{:+22.20e}  {:22.20e}'.format(
-                    self.qfit_end_params[sigma_vana_pname][0,i_q], 
-                    self.qfit_end_params[sigma_vana_pname][1,i_q]
-                )
-            else:
-                result_DATA += '{:+22.20e}  {:26}  '.format(
-                    self.qfit_end_params[par][0,i_q], 
-                    self.qfit_end_params[par][1,i_q]
-                )
+            if self.vana_read:
+                if self.qfit_end_params[sigma_vana_pname][1,i_q] != np.inf:
+                    result_DATA += '{:+22.20e}  {:22.20e}'.format(
+                        self.qfit_end_params[sigma_vana_pname][0,i_q], 
+                        self.qfit_end_params[sigma_vana_pname][1,i_q]
+                    )
+                else:
+                    result_DATA += '{:+22.20e}  {:26}  '.format(
+                        self.qfit_end_params[sigma_vana_pname][0,i_q], 
+                        self.qfit_end_params[sigma_vana_pname][1,i_q]
+                    )
             result_DATA += '\n'
                 
             temp_result_LOG = '#'*35 + ' q = {:4.2f} '.format(qi) + '#'*35 + '\n' + str(self.qfit_result[i_q].fit_report(min_correl=0.25)) + '\n' + '#'*80 + '\n'
@@ -751,9 +773,10 @@ class Data:
             else:
                 norm = 1
 
-            gauss = lmfit.models.GaussianModel().func
-            en_res = gauss(x_fit, amplitude=1, center=self.qfit_end_params[center_pname][0][i_q], sigma=self.qfit_end_params[sigma_vana_pname][0][i_q])
-            en_res = en_res / en_res.max()
+            if self.vana_read:
+                gauss = lmfit.models.GaussianModel().func
+                en_res = gauss(x_fit, amplitude=1, center=self.qfit_end_params[center_pname][0][i_q], sigma=self.qfit_end_params[sigma_vana_pname][0][i_q])
+                en_res = en_res / en_res.max()
 
             ax = axs[i_q][0]
             bx = axs[i_q][1]
@@ -788,7 +811,8 @@ class Data:
                         ax.plot(x_fit, y_fit, '--', label=cname)
                     '''
 
-            ax.plot(x_fit, en_res, ':', color='gray', label='Resolution')
+            if self.vana_read:
+                ax.plot(x_fit, en_res, ':', color='gray', label='Resolution')
             
             bbox_props = dict(boxstyle="square,pad=0.3", fc="w", ec="k", lw=1)
             ax.text(qbox_pos['x'], qbox_pos['y'], '$\\bf{{q \:=\: {:5.3f} \, \AA^{{-1}}}}$'.format(qi), size=12, horizontalalignment=qbox_align['h'], verticalalignment=qbox_align['v'], transform=ax.transAxes, bbox=bbox_props)
