@@ -21,7 +21,7 @@ class Data:
             energy_rescale = 1e3,
             read_logfile_only=False, 
             correct_bad_data=False, 
-            fix_signal_to_noise_ratio=0, 
+            fix_signal_to_noise_range=0, 
             rm_no_signal=True, 
             rm_negative_signal=True,
             get_logdata=True,
@@ -84,7 +84,7 @@ class Data:
         if correct_bad_data:
             if self.S.shape[0] >= 0:
                 self.correct_data(
-                    signal_to_noise_ratio = fix_signal_to_noise_ratio, 
+                    signal_to_noise_range = fix_signal_to_noise_range, 
                     rm_no_signal = rm_no_signal, 
                     rm_negative_values = rm_negative_signal, 
                     verbose = False
@@ -232,7 +232,7 @@ class Data:
             print('Read Vana DATA from: \'{}\'\n'.format(vana_filename))
 
     def correct_data(self, 
-        signal_to_noise_ratio=0, 
+        signal_to_noise_range=0, 
         rm_no_signal=True, 
         rm_no_errors=True, 
         rm_negative_signal=True, 
@@ -254,13 +254,13 @@ class Data:
             rm_datapoint[tdc] = np.zeros(nq, dtype='i')
         for i in range(nq):
             # Reasonable signal-to-noise range
-            if signal_to_noise_ratio > 0:
-                ids_snr = self.S[i] < signal_to_noise_ratio * self.S[i].max()
+            if signal_to_noise_range > 0:
+                ids_snr = self.S[i] < signal_to_noise_range * self.S[i].max()
                 delete_points(ids_snr)
                 rm_datapoint['Signal/Noise'][i] = self.S[i][ids_snr].shape[0]
-            elif signal_to_noise_ratio == -1:
-                signal_to_noise_ratio = 5e-4
-                ids_snr = self.S[i] < signal_to_noise_ratio * self.S[i].max()
+            elif signal_to_noise_range == -1:
+                signal_to_noise_range = 5e-4
+                ids_snr = self.S[i] < signal_to_noise_range * self.S[i].max()
                 delete_points(ids_snr)
                 rm_datapoint['Signal/Noise'][i] = self.S[i][ids_snr].shape[0]
             # No signal
