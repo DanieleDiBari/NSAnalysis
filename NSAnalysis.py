@@ -820,7 +820,7 @@ class Data:
             self.qfit_summedintensity[1, i_q] = np.sqrt((dm**2).sum())
 
             if normalize:
-                norm = 1 / self.qfit_peak_height[0, i_q]
+                norm = 1 / self.qfit_ylims['max'][0, i_q]
                 m = norm * m
                 dm = norm * dm
             else:
