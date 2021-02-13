@@ -565,6 +565,8 @@ class Data:
         fit_method='leastsq', 
         sigma_vana_pname='sigma_vana', 
         center_pname='center', 
+        extern_center_vana_pname='center', 
+        extern_sigma_vana_pname='sigma',
         use_vana_for_center=True, 
         contiguos_par_hints=False, 
         starting_qid=0, 
@@ -600,8 +602,8 @@ class Data:
                         q_vana_id.append(j_q)
                         break
             q_vana_id = np.array(q_vana_id)
-            center_vana = self.energy_rescale * self.vana_data['gaussian_center']
-            sigma_vana  = self.energy_rescale * self.vana_data['gaussian_sigma']
+            center_vana = self.vana_data[extern_center_vana_pname]
+            sigma_vana  = self.vana_data[extern_sigma_vana_pname]
 
         if data_title == '':
             if self.ftype == 'ascii':
@@ -951,6 +953,7 @@ class Data:
         self, fit_dataset_function, shared_phints, not_shared_phints, 
         not_shared_phints_qvec=dict(), fit_method='leastsq', 
         sigma_vana_pname='sigma_vana', center_pname='center', 
+        extern_center_vana_pname='center', extern_sigma_vana_pname='sigma',
         use_vana_for_center=True, 
         log_title='', log_filename='', 
         data_title='', data_subtitle='', data_filename='', 
@@ -998,8 +1001,8 @@ class Data:
                     q_vana_id.append(j_q)
                     break
         q_vana_id = np.array(q_vana_id)
-        center_vana = self.energy_rescale * self.vana_data['gaussian_center']
-        sigma_vana  = self.energy_rescale * self.vana_data['gaussian_sigma']
+        center_vana = self.vana_data[extern_center_vana_pname]
+        sigma_vana  = self.vana_data[extern_sigma_vana_pname]
 
         if data_title == '':
             if self.ftype == 'ascii':
@@ -1273,14 +1276,15 @@ class Data:
         else:
             return np.e**(- x / (2 * kB_microeV_K * self.sample_temp[0]))
 
-def read_FitDATA(fname):
+def read_FitDATA(fname, n_headerlines=3):
     with open(fname, 'r') as fin:
         txt = fin.readlines()
     
-    n = len(txt) - 1
+    nh = n_headerlines
+    n = len(txt) - nh
 
     vdim = dict() 
-    for i, k in enumerate(txt[0].split()): 
+    for i, k in enumerate(txt[nh-1].split()): 
         if 'stderr' not in k: 
             k_err = k + '_stderr' 
             if k_err in vdim: 
@@ -1299,13 +1303,13 @@ def read_FitDATA(fname):
     data = dict() 
     for k in vdim: 
         if vdim[k][0] == 1: 
-            data[k] = np.full(len(txt)-1, np.NaN) 
+            data[k] = np.full(len(txt)-nh, np.NaN) 
         else: 
-            data[k] = np.full((vdim[k][0], len(txt)-1), np.NaN) 
+            data[k] = np.full((vdim[k][0], len(txt)-nh), np.NaN) 
 
     for i in range(n):
         for k in vdim: 
-            line = txt[1+i].split()
+            line = txt[nh+i].split()
             if vdim[k][0] == 1: 
                 data[k][i] = line[vdim[k][1][0]]
             else:
@@ -1327,16 +1331,16 @@ def rebin(x, bin_avg=2, verbose=True, error_prop=False):
             new_x = np.sqrt((x[off_set:].reshape(npoint_new, bin_avg)**2).sum(1))/bin_avg
         return new_x
 
-def get_q(theta, hw, g0):
+def get_q(theta, hw, gamma0):
     '''
     
     FROM:
-        theta = angle between the incident and the scattered neutron [degree]
-        hw    = energy change experienced by the sample [meV] 
-        g0    = wave lenght of the incident neutron 
+        theta   =  angle between the incident and the scattered neutron [degree]
+        hw      =  energy change experienced by the sample [meV] 
+        gamma0  =  wave lenght of the incident neutron 
     
     COMPUTE:
-        q     = difference between the incident and scattered wave vector of the neutron [Å]
+        q       =  difference between the incident and scattered wave vector of the neutron [Å]
     
     '''
 
@@ -1344,12 +1348,12 @@ def get_q(theta, hw, g0):
     e = scipy.constants.physical_constants['elementary charge']
     m = scipy.constants.physical_constants['neutron mass']
     
-    w_meter = w * 1e-10
+    w_meter = gamma0 * 1e-10
     theta_rad = theta * np.pi / 180
-    k0 = 2 * np.pi / g0
+    k0 = 2 * np.pi / gamma0
     e0 = 0.5 * h[0]**2 / (m[0] * w_meter**2)
     e0_meV = 1e3 * e0 / e[0]            
     r = hw / e0_meV
     q = k0 * np.sqrt(2 - np.outer(r, np.ones(theta_rad.shape[0])) - 2 * np.outer(np.sqrt(1 - r), np.cos(theta_rad)))
     q.sort(axis=1)
-    return q
+    return q[0]
