@@ -10,6 +10,7 @@ matplotlib.use('agg')
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 
+hbar_microeV_sec = scipy.constants.physical_constants['reduced Planck constant in eV s'][0] * 1e6    # micro-eV · s
 kB_microeV_K = scipy.constants.physical_constants['Boltzmann constant in eV/K'][0] * 1e6             # micro-eV / K
 
 d_uconv = {
@@ -200,18 +201,40 @@ class Data:
                 self.fname['err']  = 'undefined'
         else:
             with h5py.File(filename, 'r') as ifile: 
-                # q
-                self.q  = np.array(ifile['mantid_workspace_1/workspace/axis2'])
-                self.dq = np.mean(self.q[1:] - self.q[0:-1])
-                # E
-                ## Note: Mantid save the energy array with one element more than for 
-                ##       the intensities -> keep the mean value between to near elements
-                energy_edges = np.array(ifile['mantid_workspace_1/workspace/axis1'])
-                self.E  = 0.5 * (energy_edges[1:] + energy_edges[:-1]) 
-                self.dE = np.mean(self.E[1:] - self.E[0:-1])
-                # S
-                self.S  = np.array(ifile['mantid_workspace_1/workspace/values'])
-                self.dS = np.array(ifile['mantid_workspace_1/workspace/errors'])
+                self.instrument = ifile['mantid_workspace_1/logs/instrument.name/value'][0].decode('utf-8')
+                if self.instrument == 'IN16b':
+                    # q
+                    self.q  = np.array(ifile['mantid_workspace_1/workspace/axis2'])
+                    self.dq = np.mean(self.q[1:] - self.q[0:-1])
+                    # E
+                    ## Note: Mantid save the energy array with one element more than for 
+                    ##       the intensities -> keep the mean value between to near elements
+                    energy_edges = np.array(ifile['mantid_workspace_1/workspace/axis1'])
+                    self.E  = 0.5 * (energy_edges[1:] + energy_edges[:-1]) 
+                    self.dE = np.mean(self.E[1:] - self.E[0:-1])
+                    # S
+                    self.S  = np.array(ifile['mantid_workspace_1/workspace/values'])
+                    self.dS = np.array(ifile['mantid_workspace_1/workspace/errors'])
+                else:
+                    if self.instrument != 'IN5':
+                        print('WARNING! Unknown instrument: {}. Readed as IN5.', self.instrument)
+                    # q
+                    ## Note: In the case of IN5, also for the q values Mantid save the array 
+                    ##       with one element more than for the intensities 
+                    ##       (we assume this case as the default - i.e. experiment not in ['IN16b', 'IN5'])
+                    ##       -> keep the mean value between to near elements
+                    q_edges = np.array(ifile['mantid_workspace_1/workspace/axis1'])
+                    self.q  = 0.5 * (q_edges[1:] + q_edges[:-1])
+                    self.dq = np.mean(self.q[1:] - self.q[0:-1])
+                    # E
+                    ## Note: Mantid save the energy array with one element more than for 
+                    ##       the intensities -> keep the mean value between to near elements
+                    energy_edges = np.array(ifile['mantid_workspace_1/workspace/axis2'])
+                    self.E  = 0.5 * (energy_edges[1:] + energy_edges[:-1]) 
+                    self.dE = np.mean(self.E[1:] - self.E[0:-1])
+                    # S
+                    self.S  = np.array(ifile['mantid_workspace_1/workspace/values']).transpose(1,0)
+                    self.dS = np.array(ifile['mantid_workspace_1/workspace/errors']).transpose(1,0)
                 # Temperature
                 self.sample_temp = np.array([
                     ifile['mantid_workspace_1/logs/sample.temperature/value'][:].mean(), 
@@ -223,12 +246,12 @@ class Data:
                     ifile['mantid_workspace_1/logs/sample.pressure/value'][:].std()
                     ])
                 # Numors
-                self.instrument = ifile['mantid_workspace_1/logs/instrument.name/value'][0].decode('utf-8')
                 # Wavelength
                 self.wavelength = ifile['mantid_workspace_1/logs/wavelength/value'][0]
                 # Titles
                 self.global_title = ifile['mantid_workspace_1/logs/title/value'][0].decode('utf-8')
-                self.subtitle     = ifile['mantid_workspace_1/logs/subtitle/value'][0].decode('utf-8')
+                if self.instrument != 'IN5':
+                    self.subtitle     = ifile['mantid_workspace_1/logs/subtitle/value'][0].decode('utf-8')
                 # Filename 
                 self.fname = filename
         
@@ -1348,13 +1371,13 @@ class Data:
 
 class parFIT:
     def __init__(
-        self, 
-        pname,
-        phints,
-        ptitle,
-        plabel,
-        punit
-    )
+            self, 
+            pname,
+            phints,
+            ptitle,
+            plabel,
+            punit):
+        pass
 
 class parPLOT_data:
     def __init__(
