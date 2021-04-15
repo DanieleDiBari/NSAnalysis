@@ -613,7 +613,7 @@ class Data:
         verbose=False
         ):
 
-        print('START QFit')
+        print('START QFit (method: {})'.format(fit_method))
         if not self.vana_read and use_vana_for_center:
             raise Exception('ERROR! \"use_vana_for_center\" set True, but no Vana Parameters readed.')
 
@@ -668,13 +668,13 @@ class Data:
                 result_DATA += '{:>27}  {:>26}  '.format(sv_pweight, sv_pweight+'_stderr')
         result_DATA += '\n'
         if data_filename == '':
-            data_filename = self.title + '_{}K.QFitDATA.txt'.format(int(np.round(self.sample_temp if self.ftype == 'ascii' else self.sample_temp[0])))
+            data_filename = self.title + '.QFitDATA.txt'.format(int(np.round(self.sample_temp if self.ftype == 'ascii' else self.sample_temp[0])))
 
         if log_title == '':
             if self.ftype == 'ascii':
-                data_title = self.title + ' {} K - QFIT Results log'.format(self.sample_temp)
+                log_title = self.title + ' {} K - QFIT Results log'.format(self.sample_temp)
             else:
-                data_title = self.title + ' ( {} +- {} ) K - QFIT Results log'.format(*self.sample_temp)
+                log_title = self.title + ' ( {} +- {} ) K - QFIT Results log'.format(*self.sample_temp)
         log =  '\n|' + '-' * 78 + '|\n|' + '-' * 12 + '|' + ' ' * 8
         log += log_title
         log += ' ' * 8 + '|' + '-' * 12 + '|\n|' + '-' * 78 + '|\n'
@@ -1115,9 +1115,9 @@ class Data:
 
         if log_title == '':
             if self.ftype == 'ascii':
-                data_title = self.title + ' {} K - SFIT Results log'.format(self.sample_temp)
+                log_title = self.title + ' {} K - SFIT Results log'.format(self.sample_temp)
             else:
-                data_title = self.title + ' ( {} +- {} ) K - SFIT Results log'.format(*self.sample_temp)
+                log_title = self.title + ' ( {} +- {} ) K - SFIT Results log'.format(*self.sample_temp)
         log =  '\n|' + '-' * 78 + '|\n|' + '-' * 12 + '|' + ' ' * 8
         log += log_title
         log += ' ' * 8 + '|' + '-' * 12 + '|\n|' + '-' * 78 + '|\n'
