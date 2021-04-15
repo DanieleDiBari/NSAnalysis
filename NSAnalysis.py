@@ -569,15 +569,18 @@ class Data:
         return x_val, np.array([y_val, y_err])
 
     def qfit(
-        self, fit_function, par_hints, 
+        self, fit_function, 
+        par_hints, par_qrange_of_variability={},
         elim=[], e_window=[], rebin_avg=1, 
         par_hints_qvec=dict(), 
         detailed_balance_factor=True, 
         fit_method='leastsq', 
-        sigma_vana_pname='sigma_vana', 
+        sigma_vana_pnames=['sigma_vana'], 
+        sigma_vana_pweights=[], 
         center_pname='center', 
         extern_center_vana_pname='center', 
-        extern_sigma_vana_pname='sigma',
+        extern_sigma_vana_pnames=['sigma'],
+        extern_sigma_vana_pweights=[],
         use_vana_for_center=True, 
         contiguos_par_hints=False, 
         starting_qid=0, 
@@ -602,7 +605,10 @@ class Data:
         self.qfit_end_params['en_resolution']   = np.full((2, self.q.shape[0]), np.inf)
 
         if self.vana_read:
-            self.qfit_end_params[sigma_vana_pname]  = np.full((2, self.q.shape[0]), np.inf)
+            for sv_pname in sigma_vana_pnames:
+                self.qfit_end_params[sv_pname]  = np.full((2, self.q.shape[0]), np.inf)
+            for sv_pweight in sigma_vana_pweights:
+                self.qfit_end_params[sv_pweight]  = np.full((2, self.q.shape[0]), np.inf)
 
             q_vana = self.vana_data['q']
             q_vana_id = []
@@ -614,7 +620,12 @@ class Data:
                         break
             q_vana_id = np.array(q_vana_id)
             center_vana = self.vana_data[extern_center_vana_pname]
-            sigma_vana  = self.vana_data[extern_sigma_vana_pname]
+            sigmas_vana = []
+            for i_sv in range(len(sigma_vana_pnames)):
+                sigmas_vana.append(self.vana_data[extern_sigma_vana_pnames[i_sv]])
+            weights_vana = []
+            for i_sv in range(len(sigma_vana_pweights)):
+                weights_vana.append(self.vana_data[extern_sigma_vana_pweights[i_sv]])
 
         if data_title == '':
             if self.ftype == 'ascii':
@@ -628,7 +639,10 @@ class Data:
         for par in par_hints:
             result_DATA += '{:>27}  {:>26}  '.format(par, par+'_stderr')
         if self.vana_read:
-            result_DATA += '{:>27}  {:>26}  '.format(sigma_vana_pname, sigma_vana_pname+'_stderr')
+            for sv_pname in sigma_vana_pnames:
+                result_DATA += '{:>27}  {:>26}  '.format(sv_pname, sv_pname+'_stderr')
+            for sv_pweight in sigma_vana_pweights:
+                result_DATA += '{:>27}  {:>26}  '.format(sv_pweight, sv_pweight+'_stderr')
         result_DATA += '\n'
         if data_filename == '':
             data_filename = self.title + '_{}K.QFitDATA.txt'.format(int(np.round(self.sample_temp if self.ftype == 'ascii' else self.sample_temp[0])))
@@ -656,7 +670,8 @@ class Data:
         else:
             qid_range = np.arange(0, self.q.shape[0], 1, dtype='i')
 
-        for i_q  in qid_range:
+        self.expr_costrained_params = []
+        for i_q in qid_range:
             qi = self.q[i_q]
             x, y = self.get_xy(i_q, elim=elim, e_window=e_window, rebin_avg=rebin_avg)
             
@@ -665,49 +680,81 @@ class Data:
                 y = y / self.db_factor(x)
             self.qfit_model[i_q] = lmfit.Model(fit_function)
             
-            for par in par_hints:
-                hints = par_hints[par]
+            for par, hints in par_hints.items():
                 if par == center_pname and use_vana_for_center:
                     hints['value'] = center_vana[0, q_vana_id[i_q]]
                 elif par in par_hints_qvec:
-                    hints['value'] = par_hints_qvec[par]['value'][i_q]
+                    for settings in par_hints_qvec[par]:
+                        hints[settings] = par_hints_qvec[par][settings][i_q]
                 elif contiguos_par_hints:
                     if i_q > starting_qid:
                         hints['value'] = self.qfit_end_params[par][0, i_q-1]
                     if i_q < starting_qid:
                         hints['value'] = self.qfit_end_params[par][0, i_q+1]
+                if par in par_qrange_of_variability:
+                    par_qrange = par_qrange_of_variability[par]
+                    if qi >= par_qrange['qmin'] and qi < par_qrange['qmax']:
+                        par_hints[par]['vary'] = True
+                    else:
+                        par_hints[par]['vary'] = False
+                        if qi < par_qrange['qmin']:
+                            par_hints[par]['value'] = par_qrange['fixed_lower_value']
+                        elif qi >= par_qrange['qmax']:
+                            par_hints[par]['value'] = par_qrange['fixed_upper_value']
                 self.qfit_model[i_q].set_param_hint(par, **hints)
 
             if self.vana_read:
-                self.qfit_model[i_q].set_param_hint(sigma_vana_pname, value=sigma_vana[0,q_vana_id[i_q]], vary=False)
+                for i_sv, sv_pname in enumerate(sigma_vana_pnames):
+                    self.qfit_model[i_q].set_param_hint(sv_pname, value=sigmas_vana[i_sv][0,q_vana_id[i_q]], vary=False)
+                for i_sv, sv_pweight in enumerate(sigma_vana_pweights):
+                    self.qfit_model[i_q].set_param_hint(sv_pweight, value=weights_vana[i_sv][0,q_vana_id[i_q]], vary=False)
             self.qfit_params[i_q] = self.qfit_model[i_q].make_params()
+
+            for pname, p in self.qfit_params[i_q].items():
+                if type(p.expr) == str:
+                    if p.expr != '':
+                        self.expr_costrained_params.append(pname)
 
             self.qfit_result[i_q] = self.qfit_model[i_q].fit(
                 y[0], 
                 self.qfit_params[i_q], 
                 x=x, 
                 weights=1.0/y[1], 
-                method=self.qfit_method
+                method=self.qfit_method,
+                calc_covar=True
             )
 
             for par in self.qfit_params[i_q].keys():
                 self.qfit_end_params[par][0,i_q] = self.qfit_result[i_q].params[par].value
-                if type(self.qfit_result[i_q].params[par].stderr) == type(self.qfit_result[i_q].params[par].value):
-                    self.qfit_end_params[par][1,i_q] = self.qfit_result[i_q].params[par].stderr
+                #print(par, type(self.qfit_result[i_q].params[par].value), type(self.qfit_result[i_q].params[par].stderr))
+                if par == center_pname and self.vana_read and use_vana_for_center:
+                    self.qfit_end_params[par][1,i_q] = center_vana[1, q_vana_id[i_q]]
+                elif par in sigma_vana_pnames and self.vana_read:
+                    i_sv = sigma_vana_pnames.index(par)
+                    self.qfit_end_params[par][1,i_q] = sigmas_vana[i_sv][1, q_vana_id[i_q]]
+                elif par in sigma_vana_pweights and self.vana_read:
+                    i_sv = sigma_vana_pweights.index(par)
+                    self.qfit_end_params[par][1,i_q] = weights_vana[i_sv][1, q_vana_id[i_q]]
                 else:
-                    if par == center_pname and use_vana_for_center:
-                        self.qfit_end_params[par][1,i_q] = center_vana[1, q_vana_id[i_q]]
-                    elif par == sigma_vana_pname and use_vana_for_center:
-                        self.qfit_end_params[par][1,i_q] = sigma_vana[1, q_vana_id[i_q]]
-                    elif par_hints[par]['vary']:
-                        self.qfit_end_params[par][1,i_q] = np.inf
-                        print('   WARNING! q_id = {:2d} , q_val = {:4.2f} : NO ERROR for PARAMETER \'{}\''.format(i_q,qi,par))
-                    else:
-                        self.qfit_end_params[par][1,i_q] = 0
+                    try:
+                        float(self.qfit_result[i_q].params[par].stderr)
+                        self.qfit_end_params[par][1,i_q] = self.qfit_result[i_q].params[par].stderr
+                    except:
+                        if par_hints[par]['vary']:
+                            self.qfit_end_params[par][1,i_q] = np.inf
+                            print('   WARNING! q_id = {:2d} , q_val = {:4.2f} : NO ERROR for PARAMETER \'{}\''.format(i_q,qi,par))
+                        else:
+                            self.qfit_end_params[par][1,i_q] = 0
             #red_chisqrt = self.qfit_result[i_q].chisqr / (self.qfit_result[i_q].ndata - self.data_correction['rm_points'][i_q] - self.qfit_result[i_q].nvarys)
             self.qfit_end_params['red_chi_squared'][0,i_q] = self.qfit_result[i_q].redchi
             if self.vana_read:
-                self.qfit_end_params['en_resolution'][:,i_q]   = self.qfit_end_params[sigma_vana_pname][:,i_q] * (8*np.log(2))**0.5
+                if len(extern_sigma_vana_pnames) == 1:
+                    self.qfit_end_params['en_resolution'][:,i_q] = self.qfit_end_params[sigma_vana_pnames[0]][:,i_q] * (8*np.log(2))**0.5
+                else:
+                    self.qfit_end_params['en_resolution'][:,i_q] = 0
+                    for i_sv, sv_pname in enumerate(sigma_vana_pnames):
+                        self.qfit_end_params['en_resolution'][:,i_q] += self.qfit_end_params[sv_pname][:,i_q] * self.vana_data[extern_sigma_vana_pweights[i_sv]][:,i_q]
+                    self.qfit_end_params['en_resolution'][:,i_q] = self.qfit_end_params['en_resolution'][:,i_q] * (8*np.log(2))**0.5
 
             result_DATA += '{:15.13f}  {:10.4e}  '.format(qi, self.qfit_result[i_q].redchi)
             for par in par_hints:
@@ -722,16 +769,28 @@ class Data:
                         self.qfit_end_params[par][1,i_q]
                     )
             if self.vana_read:
-                if self.qfit_end_params[sigma_vana_pname][1,i_q] != np.inf:
-                    result_DATA += '{:+22.20e}  {:22.20e}'.format(
-                        self.qfit_end_params[sigma_vana_pname][0,i_q], 
-                        self.qfit_end_params[sigma_vana_pname][1,i_q]
-                    )
-                else:
-                    result_DATA += '{:+22.20e}  {:26}  '.format(
-                        self.qfit_end_params[sigma_vana_pname][0,i_q], 
-                        self.qfit_end_params[sigma_vana_pname][1,i_q]
-                    )
+                for sv_pname in sigma_vana_pnames:
+                    if self.qfit_end_params[sv_pname][1,i_q] != np.inf:
+                        result_DATA += '{:+22.20e}  {:22.20e}  '.format(
+                            self.qfit_end_params[sv_pname][0,i_q], 
+                            self.qfit_end_params[sv_pname][1,i_q]
+                        )
+                    else:
+                        result_DATA += '{:+22.20e}  {:26}  '.format(
+                            self.qfit_end_params[sv_pname][0,i_q], 
+                            self.qfit_end_params[sv_pname][1,i_q]
+                        )
+                for sv_pweight in sigma_vana_pweights:
+                    if self.qfit_end_params[sv_pweight][1,i_q] != np.inf:
+                        result_DATA += '{:+22.20e}  {:22.20e}  '.format(
+                            self.qfit_end_params[sv_pweight][0,i_q], 
+                            self.qfit_end_params[sv_pweight][1,i_q]
+                        )
+                    else:
+                        result_DATA += '{:+22.20e}  {:26}  '.format(
+                            self.qfit_end_params[sv_pweight][0,i_q], 
+                            self.qfit_end_params[sv_pweight][1,i_q]
+                        )
             result_DATA += '\n'
                 
             temp_result_LOG = '#'*35 + ' q = {:4.2f} '.format(qi) + '#'*35 + '\n' + str(self.qfit_result[i_q].fit_report(min_correl=0.25)) + '\n' + '#'*80 + '\n'
@@ -763,7 +822,7 @@ class Data:
         elim=[], e_window=[], rebin_avg=1, 
         xlabel = 'Energy [$\mu eV$]',
         ylabel = 'Intensity [arb. unit]',
-        sigma_vana_pname='sigma_vana', center_pname='center', 
+        sigma_vana_pnames=['sigma_vana'], center_pname='center', 
         fit_function_components='none'
         ):
         if n_row == -1 or (n_row*n_col) < self.q.shape[0]:
@@ -840,7 +899,7 @@ class Data:
                 norm = 1
             if self.vana_read:
                 gauss = lmfit.models.GaussianModel().func
-                en_res = gauss(x_fit, amplitude=1, center=self.qfit_end_params[center_pname][0][i_q], sigma=self.qfit_end_params[sigma_vana_pname][0][i_q])
+                en_res = gauss(x_fit, amplitude=1, center=self.qfit_end_params[center_pname][0][i_q], sigma=self.qfit_end_params[sigma_vana_pnames[0]][0][i_q])
                 en_res = en_res / en_res.max()
 
             ax = axs[i_q][0]
@@ -863,7 +922,7 @@ class Data:
                 parms = dict()
                 excluded_pars = ['red_chi_squared','en_resolution']
                 for p in self.qfit_end_params:
-                    if p not in excluded_pars:
+                    if p not in excluded_pars and p not in self.expr_costrained_params:
                         parms[p] = self.qfit_end_params[p][0][i_q]
                 components = fit_function_components(x=x_fit, **parms)
                 for cname in components:
@@ -1321,18 +1380,32 @@ class parPLOT_data:
         self.ylabel = ylabel if ylabel != 'default' else name + ' [$arb.$ $units$]'
         self.title  = title  if title != 'default' else name
         self.color  = color
-        
-        
 
-def read_FitDATA(fname, n_headerlines=3):
+
+
+def read_FitDATA(fname, n_headerlines=3, type_of_fit='guess', return_not_shared_only=True):
     with open(fname, 'r') as fin:
         txt = fin.readlines()
     
+    if type_of_fit == 'guess':
+        if 'QFIT' in txt[0] and 'NOT SHARED Parameters' not in txt[2]:
+            type_of_fit = 'qFIT'
+            n_splitting = len(txt)
+            
+            qdata_lines = txt
+        elif 'SFIT' in txt[0] and 'NOT SHARED Parameters' in txt[2] and 'SHARED Parameters' in txt[-3]:
+            type_of_fit = 'sFIT'
+            n_splitting = len(txt) - 3
+            n_headerlines = 4
+
+    qdata_lines = txt[:n_splitting]
+    sdata_lines = txt[n_splitting:]
+
     nh = n_headerlines
-    n = len(txt) - nh
+    n = len(qdata_lines) - nh
 
     vdim = dict() 
-    for i, k in enumerate(txt[nh-1].split()): 
+    for i, k in enumerate(qdata_lines[nh-1].split()): 
         if 'stderr' not in k: 
             k_err = k + '_stderr' 
             if k_err in vdim: 
@@ -1348,21 +1421,53 @@ def read_FitDATA(fname, n_headerlines=3):
             else: 
                 vdim[k_noerr] = [1, [-1, i]] 
 
-    data = dict() 
+    not_shared_data = dict() 
     for k in vdim: 
         if vdim[k][0] == 1: 
-            data[k] = np.full(len(txt)-nh, np.NaN) 
+            not_shared_data[k] = np.full(len(qdata_lines)-nh, np.NaN) 
         else: 
-            data[k] = np.full((vdim[k][0], len(txt)-nh), np.NaN) 
+            not_shared_data[k] = np.full((vdim[k][0], len(qdata_lines)-nh), np.NaN) 
 
     for i in range(n):
         for k in vdim: 
-            line = txt[nh+i].split()
+            line = qdata_lines[nh+i].split()
             if vdim[k][0] == 1: 
-                data[k][i] = line[vdim[k][1][0]]
+                not_shared_data[k][i] = line[vdim[k][1][0]]
             else:
-                data[k][0,i] = line[vdim[k][1][0]]
-                data[k][1,i] = line[vdim[k][1][1]]
+                not_shared_data[k][0,i] = line[vdim[k][1][0]]
+                not_shared_data[k][1,i] = line[vdim[k][1][1]]
+
+    shared_data = dict() 
+    if len(sdata_lines) == 3:
+        vdim = dict() 
+        for i, k in enumerate(sdata_lines[1].split()): 
+            if 'stderr' not in k: 
+                k_err = k + '_stderr' 
+                if k_err in vdim: 
+                    vdim[k][0] += 1 
+                    vdim[k][1][0] = i 
+                else: 
+                    vdim[k] = [1, [i, -1]] 
+            else: 
+                k_noerr = k[:-7] 
+                if k_noerr in vdim: 
+                    vdim[k_noerr][0] += 1 
+                    vdim[k_noerr][1][1] = i 
+                else: 
+                    vdim[k_noerr] = [1, [-1, i]] 
+        
+        shared_data = dict() 
+        for k in vdim: 
+            line = sdata_lines[2].split()
+            if vdim[k][0] == 1: 
+                shared_data[k] = float(line[vdim[k][1][0]])
+            else:
+                shared_data[k] = np.array(line[vdim[k][1][0]:vdim[k][1][1]], dtype=np.float32)
+    
+    if not return_not_shared_only:
+        data = dict(not_shared=not_shared_data, shared=shared_data)
+    else:
+        data = not_shared_data
 
     return data
 
