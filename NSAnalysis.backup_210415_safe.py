@@ -12,17 +12,6 @@ import matplotlib.gridspec as gridspec
 
 kB_microeV_K = scipy.constants.physical_constants['Boltzmann constant in eV/K'][0] * 1e6             # micro-eV / K
 
-d_uconv = {
-    'from A^2/ns to A^2·meV':  10**9 * hbar_microeV_sec,
-    'from A^2·meV to A^2/ns': 10**-9 / hbar_microeV_sec,
-}
-tau_uconv = {
-    'from ps to 1/meV': 10**-12 / hbar_microeV_sec,
-    'from ns to 1/meV':  10**-9 / hbar_microeV_sec,
-    'from 1/meV to ps':  10**12 * hbar_microeV_sec,
-    'from 1/meV to ns':   10**9 * hbar_microeV_sec,
-}
-
 class Data:
     def __init__(
             self, 
@@ -1286,43 +1275,6 @@ class Data:
             return np.e**(- x / (2 * kB_microeV_K * self.sample_temp))
         else:
             return np.e**(- x / (2 * kB_microeV_K * self.sample_temp[0]))
-
-class parFIT:
-    def __init__(
-        self, 
-        pname,
-        phints,
-        ptitle,
-        plabel,
-        punit
-    )
-
-class parPLOT_data:
-    def __init__(
-            self, 
-            data,
-            name, 
-            title='default', 
-            qlabel='default',
-            ylabel='default',
-            qrescale=0.0,
-            yrescale=0.0,
-            qsquared=False,
-            color='default',
-            fit={}):
-        self.name   = name
-        if qsquared:
-            self.x = data.q**2
-            self.qlabel  = qlabel if qlabel != 'default' else '$q^2$ [$\AA^{{-2}}$]'
-        else:
-            self.x = data.q
-            self.qlabel  = qlabel if qlabel != 'default' else '$q$ [$\AA^{{-1}}$]'
-        self.y = data.qfit_end_params[name]
-        self.ylabel = ylabel if ylabel != 'default' else name + ' [$arb.$ $units$]'
-        self.title  = title  if title != 'default' else name
-        self.color  = color
-        
-        
 
 def read_FitDATA(fname, n_headerlines=3):
     with open(fname, 'r') as fin:
