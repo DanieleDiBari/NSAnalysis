@@ -421,7 +421,7 @@ class Data:
 
         return logdata
     
-    def reduce_data(self, elim=[], qlim=[], rebin_avg=1, e_window=[]):
+    def reduce_data(self, elim=[], qlim=[], rebin_avg=1, e_window=[], update_xlim=True):
         if rebin_avg > 1:
             self.E = rebin(self.E, bin_avg=rebin_avg)
             temp_S  = np.empty(self.S.shape,  dtype='f') 
@@ -510,7 +510,7 @@ class Data:
             self.S  = self.S[qids][:,eids]
             self.dS = self.dS[qids][:,eids]
 
-            if len(qlim) == 2:
+            if len(qlim) == 2 and update_xlim:
                 self.x_window = [None for i_q in range(self.q.shape[0])]
                 self.xlim = [None for i_q in range(self.q.shape[0])]
                 for i_q in range(self.q.shape[0]):
@@ -520,7 +520,7 @@ class Data:
         elif rebin_avg == 1:
             print('WARNING! Data reduction: Nothing done.')
 
-    def get_xy(self, i_q, elim=[], e_window=[], rebin_avg=1):
+    def get_xy(self, i_q, elim=[], e_window=[], rebin_avg=1, update_xlim=True):
         x_val = copy.deepcopy(self.E)
         y_val = copy.deepcopy(self.S[i_q])
         y_err = copy.deepcopy(self.dS[i_q])
@@ -587,7 +587,8 @@ class Data:
         y_val = y_val[ids]
         y_err = y_err[ids]
 
-        self.xlim[i_q] = (x_val.min(), x_val.max())
+        if update_xlim:
+            self.xlim[i_q] = (x_val.min(), x_val.max())
 
         return x_val, np.array([y_val, y_err])
 
@@ -598,12 +599,14 @@ class Data:
         par_hints_qvec=dict(), 
         detailed_balance_factor=True, 
         fit_method='leastsq', 
+        center_pname='center', 
         sigma_vana_pnames=['sigma_vana'], 
         sigma_vana_pweights=[], 
-        center_pname='center', 
+        bkg_vana_pname='bkg_vana', 
         extern_center_vana_pname='center', 
         extern_sigma_vana_pnames=['sigma'],
         extern_sigma_vana_pweights=[],
+        extern_bkg_vana_pname='bkg', 
         use_vana_for_center=True, 
         contiguos_par_hints=False, 
         starting_qid=0, 
@@ -618,6 +621,9 @@ class Data:
             raise Exception('ERROR! \"use_vana_for_center\" set True, but no Vana Parameters readed.')
 
         self.qfit_method  = fit_method 
+        self.qfit_elim      = elim 
+        self.qfit_e_window  = e_window 
+        self.qfit_rebin_avg = rebin_avg 
         self.qfit_model  = [None for i_q in range(self.q.shape[0])]
         self.qfit_params = [None for i_q in range(self.q.shape[0])]
         self.qfit_result = [None for i_q in range(self.q.shape[0])]
@@ -631,7 +637,8 @@ class Data:
             for sv_pname in sigma_vana_pnames:
                 self.qfit_end_params[sv_pname]  = np.full((2, self.q.shape[0]), np.inf)
             for sv_pweight in sigma_vana_pweights:
-                self.qfit_end_params[sv_pweight]  = np.full((2, self.q.shape[0]), np.inf)
+                self.qfit_end_params[sv_pweight] = np.full((2, self.q.shape[0]), np.inf)
+            self.qfit_end_params[bkg_vana_pname] = np.full((2, self.q.shape[0]), np.inf)
 
             q_vana = self.vana_data['q']
             q_vana_id = []
@@ -649,6 +656,7 @@ class Data:
             weights_vana = []
             for i_sv in range(len(sigma_vana_pweights)):
                 weights_vana.append(self.vana_data[extern_sigma_vana_pweights[i_sv]])
+            bkg_vana = self.vana_data[extern_bkg_vana_pname]
 
         if data_title == '':
             if self.ftype == 'ascii':
@@ -666,6 +674,7 @@ class Data:
                 result_DATA += '{:>27}  {:>26}  '.format(sv_pname, sv_pname+'_stderr')
             for sv_pweight in sigma_vana_pweights:
                 result_DATA += '{:>27}  {:>26}  '.format(sv_pweight, sv_pweight+'_stderr')
+            result_DATA += '{:>27}  {:>26}  '.format(bkg_vana_pname, bkg_vana_pname+'_stderr')
         result_DATA += '\n'
         if data_filename == '':
             data_filename = self.title + '.QFitDATA.txt'.format(int(np.round(self.sample_temp if self.ftype == 'ascii' else self.sample_temp[0])))
@@ -696,7 +705,7 @@ class Data:
         self.expr_costrained_params = []
         for i_q in qid_range:
             qi = self.q[i_q]
-            x, y = self.get_xy(i_q, elim=elim, e_window=e_window, rebin_avg=rebin_avg)
+            x, y = self.get_xy(i_q, elim=elim, e_window=e_window, rebin_avg=rebin_avg, update_xlim=False)
             
             if detailed_balance_factor:
                 self.detailed_balance_factor = detailed_balance_factor
@@ -731,6 +740,7 @@ class Data:
                     self.qfit_model[i_q].set_param_hint(sv_pname, value=sigmas_vana[i_sv][0,q_vana_id[i_q]], vary=False)
                 for i_sv, sv_pweight in enumerate(sigma_vana_pweights):
                     self.qfit_model[i_q].set_param_hint(sv_pweight, value=weights_vana[i_sv][0,q_vana_id[i_q]], vary=False)
+                self.qfit_model[i_q].set_param_hint(bkg_vana_pname, value=bkg_vana[0,q_vana_id[i_q]], vary=False)
             self.qfit_params[i_q] = self.qfit_model[i_q].make_params()
 
             for pname, p in self.qfit_params[i_q].items():
@@ -758,6 +768,8 @@ class Data:
                 elif par in sigma_vana_pweights and self.vana_read:
                     i_sv = sigma_vana_pweights.index(par)
                     self.qfit_end_params[par][1,i_q] = weights_vana[i_sv][1, q_vana_id[i_q]]
+                elif par == bkg_vana_pname:
+                    self.qfit_end_params[par][1,i_q] = bkg_vana[1, q_vana_id[i_q]]
                 else:
                     try:
                         float(self.qfit_result[i_q].params[par].stderr)
@@ -814,6 +826,16 @@ class Data:
                             self.qfit_end_params[sv_pweight][0,i_q], 
                             self.qfit_end_params[sv_pweight][1,i_q]
                         )
+                if self.qfit_end_params[bkg_vana_pname][1,i_q] != np.inf:
+                    result_DATA += '{:+22.20e}  {:22.20e}  '.format(
+                        self.qfit_end_params[bkg_vana_pname][0,i_q], 
+                        self.qfit_end_params[bkg_vana_pname][1,i_q]
+                    )
+                else:
+                    result_DATA += '{:+22.20e}  {:26}  '.format(
+                        self.qfit_end_params[bkg_vana_pname][0,i_q], 
+                        self.qfit_end_params[bkg_vana_pname][1,i_q]
+                    )
             result_DATA += '\n'
                 
             temp_result_LOG = '#'*35 + ' q = {:4.2f} '.format(qi) + '#'*35 + '\n' + str(self.qfit_result[i_q].fit_report(min_correl=0.25)) + '\n' + '#'*80 + '\n'
@@ -845,6 +867,7 @@ class Data:
         elim=[], e_window=[], rebin_avg=1, 
         xlabel = 'Energy [$\mu eV$]',
         ylabel = 'Intensity [arb. unit]',
+        ylabel_residues = '$10^3$ $\\cdot$ $\\Delta$ [arb. unit]',
         sigma_vana_pnames=['sigma_vana'], center_pname='center', 
         fit_function_components='none'
         ):
@@ -879,10 +902,10 @@ class Data:
             set_elim = False
         for i_q, qi in enumerate(self.q):
             if set_elim:
-                elim = self.xlim[i_q]
-
-            x, y = self.get_xy(i_q, elim=elim)
-            x_fitdata, y_fitdata = self.get_xy(i_q, elim=self.xlim[i_q])
+                elim = self.xlim[i_q] if self.qfit_elim == [] else self.qfit_elim 
+                
+            x, y = self.get_xy(i_q, elim=elim, update_xlim=False)
+            x_fitdata, y_fitdata = self.get_xy(i_q, elim=elim, update_xlim=False)
             x_fit = np.linspace(x[0], x[-1], num=fit_neval)
 
             if self.detailed_balance_factor:
@@ -933,9 +956,19 @@ class Data:
             markers, caps, bars = ax.errorbar(x,    norm * y[0],    yerr=norm * y[1],    fmt='o', color='gray', label='Data')
             [bar.set_alpha(alpha_errorbar) for bar in bars]
             [cap.set_alpha(alpha_errorbar) for cap in caps]
-            ax.axvspan(self.x_window[i_q][0], self.x_window[i_q][1], color='k', alpha=0.1)
-            ax.axvspan(-np.inf, self.xlim[i_q][0], color='k', alpha=0.1)
-            ax.axvspan(self.xlim[i_q][1], +np.inf, color='k', alpha=0.1)
+            # Fit Ranges
+            if self.qfit_e_window != []:
+                ax.axvspan(self.qfit_e_window[0], self.qfit_e_window[1], color='k', alpha=0.1)
+            #elif self.x_window[i_q] != []:
+            #    ax.axvspan(self.x_window[i_q][0], self.x_window[i_q][1], color='k', alpha=0.1)
+            if self.qfit_elim != []:
+                ax.axvspan(elim[0],  self.qfit_elim[0], color='k', alpha=0.1)
+                ax.axvspan(self.qfit_elim[1],  elim[1], color='k', alpha=0.1)
+            
+            # Data Ranges
+            #ax.axvspan(self.x_window[i_q][0], self.x_window[i_q][1], color='k', alpha=0.1)
+            #ax.axvspan(-np.inf, self.xlim[i_q][0], color='k', alpha=0.1)
+            #ax.axvspan(self.xlim[i_q][1], +np.inf, color='k', alpha=0.1)
             ax.fill_between(x_fit, m+dm,m-dm, color='r', alpha=0.25)
             f = ax.plot(x_fit, m, 'r', label='Fit')
             df = ax.fill(np.NaN, np.NaN, color='r', alpha=0.25)
@@ -966,7 +999,7 @@ class Data:
             ax.set_xticks([])
 
             bx.plot(elim, (0,0), color='k', lw=1, ls='-.')
-            m_f = self.qfit_result[i_q].best_fit * db_factor_fitdata
+            m_f = self.qfit_result[i_q].eval(x=x_fitdata) * db_factor_fitdata
             dm_f = self.qfit_result[i_q].eval_uncertainty(x=x_fitdata) * db_factor_fitdata
             residues = np.array([
                 m_f - y_fitdata[0],
@@ -978,6 +1011,7 @@ class Data:
 
             ax.set(ylabel=ylabel, xlim=elim)
             bx.set(xlabel=xlabel, xlim=elim)
+            bx.set(ylabel=ylabel_residues)
 
             ax.legend(bbox_to_anchor=legend_anchor, loc=legend_loc)
 
