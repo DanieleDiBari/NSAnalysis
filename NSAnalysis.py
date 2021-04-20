@@ -614,7 +614,7 @@ class Data:
         data_title='', data_subtitle='', data_filename='', 
         odir='', 
         verbose=False
-        ):
+    ):
 
         print('START QFit (method: {})'.format(fit_method))
         if not self.vana_read and use_vana_for_center:
@@ -870,7 +870,7 @@ class Data:
         ylabel_residues = '$10^3$ $\\cdot$ $\\Delta$ [arb. unit]',
         sigma_vana_pnames=['sigma_vana'], center_pname='center', 
         fit_function_components='none'
-        ):
+    ):
         if n_row == -1 or (n_row*n_col) < self.q.shape[0]:
             n_row = self.q.shape[0] // n_col
             if self.q.shape[0] % n_col > 0:
@@ -1078,16 +1078,26 @@ class Data:
 
     def simultaneus_fit(
         self, fit_dataset_function, shared_phints, not_shared_phints, 
-        not_shared_phints_qvec=dict(), fit_method='leastsq', 
-        sigma_vana_pname='sigma_vana', center_pname='center', 
-        extern_center_vana_pname='center', extern_sigma_vana_pname='sigma',
+        not_shared_phints_qvec=dict(), 
+        detailed_balance_factor=True, 
+        fit_method='leastsq',
+        center_pname='center', 
+        sigma_vana_pnames=['sigma_vana'], 
+        sigma_vana_pweights=[], 
+        bkg_vana_pname='bkg_vana', 
+        extern_center_vana_pname='center', 
+        extern_sigma_vana_pnames=['sigma'],
+        extern_sigma_vana_pweights=[],
+        extern_bkg_vana_pname='bkg', 
         use_vana_for_center=True, 
         log_title='', log_filename='', 
         data_title='', data_subtitle='', data_filename='', 
-        odir='', verbose=False, detailed_balance_factor=True,
-        with_error=True):
+        odir='', 
+        verbose=False, 
+        with_error=True
+        ):
         
-        print('START SFit')
+        print('START SFit (method: {})'.format(fit_method))
         self.sfit_dataset_function = fit_dataset_function
         self.sfit_method = fit_method
 
@@ -1115,21 +1125,37 @@ class Data:
             for par in not_shared_phints:
                 par = par + '_' + str(i_q+1)
                 self.sfit_end_params['not_shared'][par] = np.full(2, np.inf)
-            par = sigma_vana_pname + '_' + str(i_q+1)
-            self.sfit_end_params['not_shared'][par] = np.full(2, np.inf)
-            par = 'en_resolution' + '_' + str(i_q+1)
-            self.sfit_end_params['not_shared'][par] = np.full(2, np.inf)
+        
+        if self.vana_read:
+            for i_q in range(self.q.shape[0]):
+                for sv_pname in sigma_vana_pnames:
+                    par = sv_pname + '_' + str(i_q+1)
+                    self.sfit_end_params['not_shared'][par]  = np.full(2, np.inf)
+                for sv_pweight in sigma_vana_pweights:
+                    par = sv_pweight + '_' + str(i_q+1)
+                    self.sfit_end_params['not_shared'][par] = np.full(2, np.inf)
+                par = bkg_vana_pname + '_' + str(i_q+1)
+                self.sfit_end_params['not_shared'][par] = np.full(2, np.inf)
+                par = 'en_resolution' + '_' + str(i_q+1)
+                self.sfit_end_params['not_shared'][par] = np.full(2, np.inf)
 
-        q_vana = self.vana_data['q']
-        q_vana_id = []
-        for qi in self.q:
-            for j_q, qj in enumerate(q_vana):
-                if '{:4.2f}'.format(qi) == '{:4.2f}'.format(qj):
-                    q_vana_id.append(j_q)
-                    break
-        q_vana_id = np.array(q_vana_id)
-        center_vana = self.vana_data[extern_center_vana_pname]
-        sigma_vana  = self.vana_data[extern_sigma_vana_pname]
+            q_vana = self.vana_data['q']
+            q_vana_id = []
+            for qi in self.q:
+                for j_q, qj in enumerate(q_vana):
+                    if '{:4.2f}'.format(qi) == '{:4.2f}'.format(qj):
+                    #if np.round(qi,5) == np.round(q,5):
+                        q_vana_id.append(j_q)
+                        break
+            q_vana_id = np.array(q_vana_id)
+            center_vana = self.vana_data[extern_center_vana_pname]
+            sigmas_vana = []
+            for i_sv in range(len(sigma_vana_pnames)):
+                sigmas_vana.append(self.vana_data[extern_sigma_vana_pnames[i_sv]])
+            weights_vana = []
+            for i_sv in range(len(sigma_vana_pweights)):
+                weights_vana.append(self.vana_data[extern_sigma_vana_pweights[i_sv]])
+            bkg_vana = self.vana_data[extern_bkg_vana_pname]
 
         if data_title == '':
             if self.ftype == 'ascii':
@@ -1142,7 +1168,12 @@ class Data:
         result_DATA += '{:>15}  '.format('q')
         for par in not_shared_phints:
             result_DATA += '{:>27}  {:>26}  '.format(par, par+'_stderr')
-        result_DATA += '{:>27}  {:>26}  '.format(sigma_vana_pname, sigma_vana_pname+'_stderr')
+        if self.vana_read:
+            for sv_pname in sigma_vana_pnames:
+                result_DATA += '{:>27}  {:>26}  '.format(sv_pname, sv_pname+'_stderr')
+            for sv_pweight in sigma_vana_pweights:
+                result_DATA += '{:>27}  {:>26}  '.format(sv_pweight, sv_pweight+'_stderr')
+            result_DATA += '{:>27}  {:>26}  '.format(bkg_vana_pname, bkg_vana_pname+'_stderr')
         result_DATA += '\n'
         if data_filename == '':
             data_filename = self.title + '_{}K.SFitDATA.txt'.format(int(np.round(self.sample_temp if self.ftype == 'ascii' else self.sample_temp[0])))
@@ -1161,6 +1192,7 @@ class Data:
         if log_filename == '':
             log_filename = self.title + '_{}K.SFitLOG.txt'.format(int(np.round(self.sample_temp if self.ftype == 'ascii' else self.sample_temp[0])))
         
+        self.expr_costrained_params_sFIT = []
         self.sfit_params = lmfit.Parameters()
         # Shared (among q values)
         for par in shared_phints:
@@ -1172,44 +1204,80 @@ class Data:
                 if par == center_pname and use_vana_for_center:
                     hints['value'] = center_vana[0, q_vana_id[i_q]]
                 elif par in not_shared_phints_qvec:
-                    hints['value'] = not_shared_phints_qvec[par]['value'][i_q]
+                    for settings in not_shared_phints_qvec[par]:
+                        hints[settings] = not_shared_phints_qvec[par][settings][i_q]
                 par = par + '_' + str(i_q + 1)
-                self.sfit_params.add(par, **hints)
-            self.sfit_params.add(sigma_vana_pname + '_' + str(i_q + 1), value=sigma_vana[0, q_vana_id[i_q]], vary=False)
-        
+                self.sfit_params.add(par, **hints)        
+            if self.vana_read:
+                for i_sv, sv_pname in enumerate(sigma_vana_pnames):
+                    self.sfit_params.add(sv_pname + '_' + str(i_q + 1), value=sigmas_vana[i_sv][0,q_vana_id[i_q]], vary=False)
+                for i_sv, sv_pweight in enumerate(sigma_vana_pweights):
+                    self.sfit_params.add(sv_pweight + '_' + str(i_q + 1), value=weights_vana[i_sv][0,q_vana_id[i_q]], vary=False)
+                self.sfit_params.add(bkg_vana_pname + '_' + str(i_q + 1), value=bkg_vana[0,q_vana_id[i_q]], vary=False)
+            
+            for pname, p in self.sfit_params.items():
+                if type(p.expr) == str:
+                    if p.expr != '':
+                        self.expr_costrained_params_sFIT.append(pname)
         norm = 1
         if detailed_balance_factor:
             self.detailed_balance_factor = detailed_balance_factor
             norm = 1 / self.db_factor(self.E)
         if with_error:
-            self.sfit_result = lmfit.minimize(fcn=objective, params=self.sfit_params, kws=dict(x=self.E, q=self.q, data=norm*self.S, std=norm*self.dS), method=self.sfit_method)
+            self.sfit_result = lmfit.minimize(fcn=objective, params=self.sfit_params, kws=dict(x=self.E, q=self.q, data=norm*self.S, std=norm*self.dS), method=self.sfit_method, calc_covar=True)
         else:
             self.sfit_result = lmfit.minimize(fcn=objective, params=self.sfit_params, kws=dict(x=self.E, q=self.q, data=norm*self.S, std=None), method=self.sfit_method)
         if verbose:
             lmfit.report_fit(self.sfit_result.params)
         #self.sfit_result_LOG += '\n' + lmfit.report_fit(self.sfit_result.params)
 
-        for i_q in range(self.q.shape[0]):
-            qi = self.q[i_q]
-            for par in not_shared_phints:
-                pname  = par + '_' + str(i_q+1)
+        print(shared_phints)
+        print()
+        print(self.sfit_result.params)
+        print()
+        #for i_q in range(self.q.shape[0]):
+        #    qi = self.q[i_q]
+        for pname in self.sfit_params.keys():
+            if pname not in shared_phints:
+                par = pname[:pname.find('_')]
+                i_q = int(pname[len(pname)-pname[::-1].find('_'):]) - 1
+                qi = self.q[i_q]
+                print(pname, par, i_q, qi)
+                
                 value  = self.sfit_result.params.get(pname).value
                 stderr = self.sfit_result.params.get(pname).stderr
                 self.sfit_end_params['not_shared'][pname][0] = value
-                if type(stderr) == type(value):
-                    self.sfit_end_params['not_shared'][pname][1] = stderr
+
+                if par == center_pname and self.vana_read and use_vana_for_center:
+                    self.sfit_end_params['not_shared'][pname][1] = center_vana[1, q_vana_id[i_q]]
+                elif par in sigma_vana_pnames and self.vana_read:
+                    i_sv = sigma_vana_pnames.index(par)
+                    self.sfit_end_params['not_shared'][pname][1] = sigmas_vana[i_sv][1, q_vana_id[i_q]]
+                    print(i_q, par, i_sv, sigmas_vana[i_sv][1, q_vana_id[i_q]])
+                elif par in sigma_vana_pweights and self.vana_read:
+                    i_sv = sigma_vana_pweights.index(par)
+                    self.sfit_end_params['not_shared'][pname][1] = weights_vana[i_sv][1, q_vana_id[i_q]]
+                elif par == bkg_vana_pname:
+                    self.sfit_end_params['not_shared'][pname][1] = bkg_vana[1, q_vana_id[i_q]]
                 else:
-                    if par == center_pname:
-                        self.sfit_end_params['not_shared'][pname][1] = center_vana[1, q_vana_id[i_q]]
-                    elif not_shared_phints[par]['vary']:
-                        self.sfit_end_params['not_shared'][pname][1] = np.inf
-                        print('   WARNING! q_id = {:2d} , q_val = {:4.2f} : NO ERROR for PARAMETER \'{}\''.format(i_q, qi, pname))
-                    else:
-                        self.sfit_end_params['not_shared'][pname][1] = 0
-            self.sfit_end_params['not_shared'][sigma_vana_pname+'_'+str(i_q+1)][0] = sigma_vana[0, q_vana_id[i_q]]
-            self.sfit_end_params['not_shared'][sigma_vana_pname+'_'+str(i_q+1)][1] = sigma_vana[1, q_vana_id[i_q]]
-            self.sfit_end_params['not_shared']['en_resolution_'+str(i_q+1)] = self.sfit_end_params['not_shared'][sigma_vana_pname+'_'+str(i_q+1)] * (8*np.log(2))**0.5
-        
+                    try:
+                        float(stderr)
+                        self.sfit_end_params['not_shared'][pname][1] = float(stderr)
+                    except:
+                        if par_hints[par]['vary']:
+                            self.sfit_end_params['not_shared'][pname][1] = np.inf
+                            print('   WARNING! q_id = {:2d} , q_val = {:4.2f} : NO ERROR for PARAMETER \'{}\''.format(i_q, qi, pname))
+                        else:
+                            self.sfit_end_params['not_shared'][pname][1] = 0
+            if self.vana_read:
+                if len(extern_sigma_vana_pnames) == 1:
+                    self.sfit_end_params['not_shared']['en_resolution_'+str(i_q+1)] = self.sfit_end_params['not_shared'][sigma_vana_pnames[0]+'_'+str(i_q+1)] * (8*np.log(2))**0.5
+                else:
+                    self.sfit_end_params['not_shared']['en_resolution_'+str(i_q+1)] = 0
+                    for i_sv, sv_pname in enumerate(sigma_vana_pnames):
+                        self.sfit_end_params['not_shared']['en_resolution_'+str(i_q+1)] += self.sfit_end_params['not_shared'][sv_pname+'_'+str(i_q+1)] * self.vana_data[extern_sigma_vana_pweights[i_sv]][:,i_q]
+                    self.sfit_end_params['not_shared']['en_resolution_'+str(i_q+1)] = self.sfit_end_params['not_shared']['en_resolution_'+str(i_q+1)] * (8*np.log(2))**0.5
+
         red_chisqrt = self.sfit_result.chisqr / (self.sfit_result.ndata - self.data_correction['rm_points'][i_q] - self.sfit_result.nvarys)    
         self.sfit_end_params['shared']['red_chi_squared'][0] = red_chisqrt
         for par in shared_phints:
@@ -1224,7 +1292,6 @@ class Data:
                     print('   WARNING! NO ERROR for SHARED PARAMETER \'{}\''.format(par))
                 else:
                     self.sfit_end_params['shared'][par][1] = 0
-            
         
         for i_q in range(self.q.shape[0]):
             qi = self.q[i_q]
@@ -1236,12 +1303,27 @@ class Data:
                     result_DATA += '{:+22.20e}  {:22.20e}  '.format(ns_par[0], ns_par[1])
                 else:
                     result_DATA += '{:+22.20e}  {:26}  '.format(ns_par[0], ns_par[1])
-            pname  = sigma_vana_pname + '_' + str(i_q+1)
-            ns_par = self.sfit_end_params['not_shared'][pname]
-            if ns_par[1] != np.inf:
-                result_DATA += '{:+22.20e}  {:22.20e}  '.format(ns_par[0], ns_par[1])
-            else:
-                result_DATA += '{:+22.20e}  {:26}  '.format(ns_par[0], ns_par[1])
+            if self.vana_read:
+                for sv_pname in sigma_vana_pnames:
+                    pname  = sv_pname + '_' + str(i_q+1)
+                    ns_par = self.sfit_end_params['not_shared'][pname]
+                    if ns_par[1] != np.inf:
+                        result_DATA += '{:+22.20e}  {:22.20e}  '.format(ns_par[0], ns_par[1])
+                    else:
+                        result_DATA += '{:+22.20e}  {:26}  '.format(ns_par[0], ns_par[1])
+                for sv_pweight in sigma_vana_pweights:
+                    pname  = sv_pweight + '_' + str(i_q+1)
+                    ns_par = self.sfit_end_params['not_shared'][pname]
+                    if ns_par[1] != np.inf:
+                        result_DATA += '{:+22.20e}  {:22.20e}  '.format(ns_par[0], ns_par[1])
+                    else:
+                        result_DATA += '{:+22.20e}  {:26}  '.format(ns_par[0], ns_par[1])
+                pname  = bkg_vana_pname + '_' + str(i_q+1)
+                ns_par = self.sfit_end_params['not_shared'][pname]
+                if ns_par[1] != np.inf:
+                    result_DATA += '{:+22.20e}  {:22.20e}  '.format(ns_par[0], ns_par[1])
+                else:
+                    result_DATA += '{:+22.20e}  {:26}  '.format(ns_par[0], ns_par[1])
             result_DATA += '\n'
 
         result_DATA += 'SHARED Parameters:\n'
@@ -1283,7 +1365,8 @@ class Data:
         normalize = True,
         xlabel = 'Energy [$\mu eV$]',
         ylabel = 'Intensity [arb. unit]',
-        sigma_vana_pname='sigma_vana', center_pname='center', 
+        ylabel_residues = '$10^3$ $\\cdot$ $\\Delta$ [arb. unit]',
+        sigma_vana_pnames=['sigma_vana'], center_pname='center', 
         fit_function_components='none'
         ):
         if n_row == -1 or (n_row*n_col) < self.q.shape[0]:
@@ -1335,11 +1418,14 @@ class Data:
             else:
                 norm = 1
 
-            gauss = lmfit.models.GaussianModel().func
-            en_res = gauss(x_fit, amplitude=1, 
-                center=self.sfit_end_params['not_shared'][center_pname+'_'+str(i_q+1)][0], 
-                sigma=self.sfit_end_params['not_shared'][sigma_vana_pname+'_'+str(i_q+1)][0])
-            en_res = en_res / en_res.max()
+            if self.vana_read:
+                gauss = lmfit.models.GaussianModel().func
+                en_res = gauss(
+                    x_fit, amplitude=1, 
+                    center=self.sfit_end_params['not_shared'][center_pname+'_'+str(i_q+1)][0], 
+                    sigma=self.sfit_end_params['not_shared'][sigma_vana_pnames[0]+'_'+str(i_q+1)][0]
+                )
+                en_res = en_res / en_res.max()
 
             ax = axs[i_q][0]
             bx = axs[i_q][1]
@@ -1374,7 +1460,8 @@ class Data:
                         ax.plot(x_fit, y_fit, '--', label=cname)
                     '''
 
-            ax.plot(x_fit, en_res, ':', color='gray', label='Resolution')
+            if self.vana_read:
+                ax.plot(x_fit, en_res, ':', color='gray', label='Resolution')
 
             bbox_props = dict(boxstyle="square,pad=0.3", fc="w", ec="k", lw=1)
             ax.text(qbox_pos['x'], qbox_pos['y'], '$\\bf{{q \:=\: {:5.3f} \, \AA^{{-1}}}}$'.format(qi), size=12, horizontalalignment=qbox_align['h'], verticalalignment=qbox_align['v'], transform=ax.transAxes, bbox=bbox_props)
@@ -1391,6 +1478,7 @@ class Data:
 
             ax.set(ylabel=ylabel, xlim=self.elim)
             bx.set(xlabel=xlabel, xlim=self.elim)
+            bx.set(ylabel=ylabel_residues)
 
             ax.legend(bbox_to_anchor=legend_anchor, loc=legend_loc)
         
