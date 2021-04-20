@@ -1233,7 +1233,7 @@ class Data:
 
         for pname in self.sfit_params.keys():
             if pname not in shared_phints:
-                par = pname[:pname.find('_')]
+                par = pname[:len(pname)-pname[::-1].find('_')-1]
                 i_q = int(pname[len(pname)-pname[::-1].find('_'):]) - 1
                 qi = self.q[i_q]
                 #print(pname, par, i_q, qi)
@@ -1247,7 +1247,7 @@ class Data:
                 elif par in sigma_vana_pnames and self.vana_read:
                     i_sv = sigma_vana_pnames.index(par)
                     self.sfit_end_params['not_shared'][pname][1] = sigmas_vana[i_sv][1, q_vana_id[i_q]]
-                    print(i_q, par, i_sv, sigmas_vana[i_sv][1, q_vana_id[i_q]])
+                    #print(i_q, par, i_sv, sigmas_vana[i_sv][1, q_vana_id[i_q]])
                 elif par in sigma_vana_pweights and self.vana_read:
                     i_sv = sigma_vana_pweights.index(par)
                     self.sfit_end_params['not_shared'][pname][1] = weights_vana[i_sv][1, q_vana_id[i_q]]
@@ -1258,7 +1258,7 @@ class Data:
                         float(stderr)
                         self.sfit_end_params['not_shared'][pname][1] = float(stderr)
                     except:
-                        if par_hints[par]['vary']:
+                        if not_shared_phints[par]['vary']:
                             self.sfit_end_params['not_shared'][pname][1] = np.inf
                             print('   WARNING! q_id = {:2d} , q_val = {:4.2f} : NO ERROR for PARAMETER \'{}\''.format(i_q, qi, pname))
                         else:
