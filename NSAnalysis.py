@@ -1231,18 +1231,12 @@ class Data:
             lmfit.report_fit(self.sfit_result.params)
         #self.sfit_result_LOG += '\n' + lmfit.report_fit(self.sfit_result.params)
 
-        print(shared_phints)
-        print()
-        print(self.sfit_result.params)
-        print()
-        #for i_q in range(self.q.shape[0]):
-        #    qi = self.q[i_q]
         for pname in self.sfit_params.keys():
             if pname not in shared_phints:
                 par = pname[:pname.find('_')]
                 i_q = int(pname[len(pname)-pname[::-1].find('_'):]) - 1
                 qi = self.q[i_q]
-                print(pname, par, i_q, qi)
+                #print(pname, par, i_q, qi)
                 
                 value  = self.sfit_result.params.get(pname).value
                 stderr = self.sfit_result.params.get(pname).stderr
@@ -1391,8 +1385,27 @@ class Data:
 
         x_fit = np.linspace(self.E[0], self.E[-1], num=fit_neval)
 
-        self.qfit_elastic_summedintensity = np.zeros((2,self.q.shape[0]))
-        self.qfit_summedintensity = np.zeros((2,self.q.shape[0]))
+        if type(fit_function_components) != type('none'):
+            '''
+            print('\nNOT SHARED End Params:')
+            for k in self.sfit_end_params['not_shared'].keys():
+                print(k)
+            print('\nSHARED End Params:')
+            for k in self.sfit_end_params['shared'].keys():
+                print(k)
+            print('\nsFIT Params:')
+            for k in self.sfit_params.keys():
+                print(k)
+            '''
+            fit_function_params = []
+            for pname in self.sfit_params.keys():
+                if pname not in self.expr_costrained_params_sFIT:
+                    par = pname[:len(pname)-pname[::-1].find('_')-1]
+                    if par not in fit_function_params:
+                        fit_function_params.append(par)
+            #print(fit_function_params)
+        self.sfit_elastic_summedintensity = np.zeros((2,self.q.shape[0]))
+        self.sfit_summedintensity = np.zeros((2,self.q.shape[0]))
         for i_q, qi in enumerate(self.q):
             
             if self.detailed_balance_factor:
@@ -1406,10 +1419,10 @@ class Data:
             dm = np.zeros(m.shape[0])
 
             elastic_erange = (x_fit >= -self.sfit_end_params['not_shared']['en_resolution_'+str(i_q+1)][0]) & (x_fit <= self.sfit_end_params['not_shared']['en_resolution_'+str(i_q+1)][1])
-            self.qfit_elastic_summedintensity[0, i_q] = m[elastic_erange].mean()
-            self.qfit_elastic_summedintensity[1, i_q] = np.sqrt((dm[elastic_erange]**2).mean())
-            self.qfit_summedintensity[0, i_q] = m.sum()
-            self.qfit_summedintensity[1, i_q] = np.sqrt((dm**2).sum())
+            self.sfit_elastic_summedintensity[0, i_q] = m[elastic_erange].mean()
+            self.sfit_elastic_summedintensity[1, i_q] = np.sqrt((dm[elastic_erange]**2).mean())
+            self.sfit_summedintensity[0, i_q] = m.sum()
+            self.sfit_summedintensity[1, i_q] = np.sqrt((dm**2).sum())
 
             if normalize:
                 norm = 1 / m.max() 
@@ -1445,10 +1458,13 @@ class Data:
 
             if type(fit_function_components) != type('none'):
                 parms = dict()
-                excluded_pars = ['red_chi_squared','en_resolution']
-                for p in self.sfit_end_params:
-                    if p not in excluded_pars:
-                        parms[p] = self.sfit_end_params[p][0]
+                for par in fit_function_params:
+                    if par not in self.sfit_end_params['shared'].keys():
+                        pname = par + '_' + str(i_q+1)
+                        parms[par] = self.sfit_end_params['not_shared'][pname][0]
+                    else:
+                        parms[par] = self.sfit_end_params['shared'][par][0]
+                    parms['q_i'] = qi
                 components = fit_function_components(x=x_fit, **parms)
                 for cname in components:
                     y_fit = norm * components[cname] * db_factor_fit
