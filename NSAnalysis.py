@@ -873,6 +873,7 @@ class Data:
         dpi = 100,
         n_col = 6,  dim_col = 12,
         n_row = 3,  dim_row = 10,
+        alpha_data_errorbar = 0.3, data_marksize=1,
         legend_anchor = (0.009, 0.985), legend_loc='upper left',
         qbox_pos=dict(x=0.975, y=1.03), qbox_align=dict(h='right', v='center'),
         fit_neval = 1000,
@@ -964,9 +965,9 @@ class Data:
             ax = axs[i_q][0]
             bx = axs[i_q][1]
 
-            alpha_errorbar = 0.3
+            alpha_errorbar = alpha_data_errorbar
 
-            markers, caps, bars = ax.errorbar(x,    norm * y[0],    yerr=norm * y[1],    fmt='o', color='gray', label='Data')
+            markers, caps, bars = ax.errorbar(x,    norm * y[0],    yerr=norm * y[1],    fmt='o', ms=data_marksize, color='gray', label='Data')
             [bar.set_alpha(alpha_errorbar) for bar in bars]
             [cap.set_alpha(alpha_errorbar) for cap in caps]
             # Fit Ranges
