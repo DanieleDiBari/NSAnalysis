@@ -598,7 +598,7 @@ class Data:
         elim=[], e_window=[], rebin_avg=1, 
         par_hints_qvec=dict(), 
         detailed_balance_factor=True, 
-        fit_method='leastsq', 
+        fit_method = 'least_squares', 
         center_pname='center', 
         sigma_vana_pnames=['sigma_vana'], 
         sigma_vana_pweights=[], 
@@ -615,12 +615,14 @@ class Data:
         odir='', 
         verbose=False
     ):
-
-        print('START QFit (method: {})'.format(fit_method))
+        if type(fit_method) == str:
+            print('START QFit (method: {})'.format(fit_method))
+        else:
+            print('START QFit (method: {})'.format(fit_method['method']))
         if not self.vana_read and use_vana_for_center:
             raise Exception('ERROR! \"use_vana_for_center\" set True, but no Vana Parameters readed.')
 
-        self.qfit_method  = fit_method 
+        self.qfit_method     = fit_method 
         self.qfit_elim      = elim 
         self.qfit_e_window  = e_window 
         self.qfit_rebin_avg = rebin_avg 
@@ -748,14 +750,25 @@ class Data:
                     if p.expr != '':
                         self.expr_costrained_params.append(pname)
 
-            self.qfit_result[i_q] = self.qfit_model[i_q].fit(
-                y[0], 
-                self.qfit_params[i_q], 
-                x=x, 
-                weights=1.0/y[1], 
-                method=self.qfit_method,
-                calc_covar=True
-            )
+            if type(self.qfit_method) == str:
+                self.qfit_result[i_q] = self.qfit_model[i_q].fit(
+                    y[0], 
+                    self.qfit_params[i_q], 
+                    x=x, 
+                    weights=1.0/y[1], 
+                    method=self.qfit_method,
+                    calc_covar=True
+                )
+            else:
+                self.qfit_result[i_q] = self.qfit_model[i_q].fit(
+                    y[0], 
+                    self.qfit_params[i_q], 
+                    x=x, 
+                    weights=1.0/y[1], 
+                    method=self.qfit_method['method'],
+                    fit_kws=self.qfit_method['minimizer_options'],
+                    calc_covar=True
+                )
 
             for par in self.qfit_params[i_q].keys():
                 self.qfit_end_params[par][0,i_q] = self.qfit_result[i_q].params[par].value
@@ -1097,7 +1110,10 @@ class Data:
         with_error=True
         ):
         
-        print('START SFit (method: {})'.format(fit_method))
+        if type(fit_method) == str:
+            print('START SFit (method: {})'.format(fit_method))
+        else:
+            print('START SFit (method: {})'.format(fit_method['method']))
         self.sfit_dataset_function = fit_dataset_function
         self.sfit_method = fit_method
 
@@ -1223,10 +1239,42 @@ class Data:
         if detailed_balance_factor:
             self.detailed_balance_factor = detailed_balance_factor
             norm = 1 / self.db_factor(self.E)
-        if with_error:
-            self.sfit_result = lmfit.minimize(fcn=objective, params=self.sfit_params, kws=dict(x=self.E, q=self.q, data=norm*self.S, std=norm*self.dS), method=self.sfit_method, calc_covar=True)
+        
+        
+        if type(self.sfit_method) == str:
+            self.sfit_result = lmfit.minimize(
+                fcn=objective, 
+                params=self.sfit_params, 
+                kws=dict(x=self.E, q=self.q, data=norm*self.S, std=norm*self.dS if with_error else None), 
+                method=self.sfit_method,
+                calc_covar=True
+            )
         else:
-            self.sfit_result = lmfit.minimize(fcn=objective, params=self.sfit_params, kws=dict(x=self.E, q=self.q, data=norm*self.S, std=None), method=self.sfit_method)
+            self.sfit_result = lmfit.minimize(
+                fcn=objective, 
+                params=self.sfit_params, 
+                kws=dict(x=self.E, q=self.q, data=norm*self.S, std=norm*self.dS if with_error else None), 
+                method=self.sfit_method['method'],
+                calc_covar=True,
+                **self.sfit_method['minimizer_options'],
+            )
+        '''
+        if with_error:
+            self.sfit_result = lmfit.minimize(
+                fcn=objective, 
+                params=self.sfit_params, 
+                kws=dict(x=self.E, q=self.q, data=norm*self.S, std=norm*self.dS), 
+                method=self.sfit_method, 
+                calc_covar=True
+            )
+        else:
+            self.sfit_result = lmfit.minimize(
+                fcn=objective, 
+                params=self.sfit_params, 
+                kws=dict(x=self.E, q=self.q, data=norm*self.S, std=None), 
+                method=self.sfit_method
+            )
+        '''
         if verbose:
             lmfit.report_fit(self.sfit_result.params)
         #self.sfit_result_LOG += '\n' + lmfit.report_fit(self.sfit_result.params)
